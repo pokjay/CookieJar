@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { CATEGORY_COLORS } from "@/lib/constants";
 import { formatCurrency, formatCurrencyFull } from "@/lib/formatting";
@@ -29,6 +30,19 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<
 
 export default function NetWorthPieChart({ data }: NetWorthPieChartProps) {
   const colors = useThemeColors();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(600);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setContainerWidth(el.clientWidth));
+    ro.observe(el);
+    setContainerWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+
+  const isMobile = containerWidth < 480;
 
   const chartData: PieEntry[] = Object.entries(data).map(([name, value]) => ({
     name,
@@ -59,7 +73,7 @@ export default function NetWorthPieChart({ data }: NetWorthPieChartProps) {
   }
 
   return (
-    <div data-testid="chart-pie" className="bg-cj-surface border border-cj-border rounded-xl p-6">
+    <div data-testid="chart-pie" ref={containerRef} className="bg-cj-surface border border-cj-border rounded-xl p-6">
       <h3 className="text-sm font-medium text-cj-text-muted mb-4">
         Net Worth by Category
       </h3>
@@ -73,8 +87,8 @@ export default function NetWorthPieChart({ data }: NetWorthPieChartProps) {
             outerRadius="68%"
             dataKey="value"
             nameKey="name"
-            label={renderLabel}
-            labelLine={{ stroke: colors.grid, strokeWidth: 1 }}
+            label={isMobile ? undefined : renderLabel}
+            labelLine={isMobile ? false : { stroke: colors.grid, strokeWidth: 1 }}
           >
             {chartData.map((entry) => (
               <Cell
@@ -86,6 +100,22 @@ export default function NetWorthPieChart({ data }: NetWorthPieChartProps) {
           <Tooltip content={<CustomTooltip />} />
         </PieChart>
       </ResponsiveContainer>
+      {isMobile && (
+        <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
+          {chartData.map((entry) => (
+            <div key={entry.name} className="flex items-center gap-2 min-w-0">
+              <div
+                className="w-3 h-3 rounded-full flex-shrink-0"
+                style={{ backgroundColor: CATEGORY_COLORS[entry.name] || "#6B7280" }}
+              />
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-cj-text truncate">{entry.name}</p>
+                <p className="text-xs text-cj-text-muted">{formatCurrency(entry.value)}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
