@@ -1,0 +1,28 @@
+[project]
+name = "family-money-tracker"
+version = "0.1.0"
+description = "Family finance dashboard built with Next.js and FastAPI"
+requires-python = ">=3.12"
+dependencies = [
+    "plotly>=5.24.0",
+    "pandas>=2.2.0",
+    "sqlalchemy>=2.0.0",
+    "psycopg2-binary>=2.9.0",
+    "python-dotenv>=1.0.0",
+    "fastapi>=0.136.0",
+    "uvicorn>=0.44.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8.0",
+    "ipdb>=0.13.13",
+    "pytest>=9.0.2",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]

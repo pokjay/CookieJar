@@ -1,0 +1,31 @@
+# Merged with docker-compose.yml + docker-compose.db.yml — never loaded in isolation.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.db.yml -f docker-compose.test.yml run --rm playwright
+#   or:  make e2e
+
+services:
+  # Inject test-only auth secrets so CI needs no external secrets.
+  # These values are intentionally public — they guard nothing in the test stack.
+  frontend:
+    environment:
+      NEXTAUTH_SECRET: "e2e-test-secret-not-for-production"
+      AUTH_PASSWORD: "e2e-pass"
+
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.59.1-noble
+    working_dir: /e2e
+    volumes:
+      - ./e2e:/e2e
+      - e2e_node_modules:/e2e/node_modules
+    networks:
+      - internal
+    depends_on:
+      frontend:
+        condition: service_healthy
+    # npm install is fast on warm cache (named volume); always correct on CI (fresh volume)
+    command: sh -c "npm install && npx playwright test"
+    environment:
+      BASE_URL: "http://frontend:3000"
+      AUTH_PASSWORD: "e2e-pass"
+
+volumes:
+  e2e_node_modules:

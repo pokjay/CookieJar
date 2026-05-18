@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: family_finance
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d family_finance"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  db-seed:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: [".venv/bin/python", "scripts/seed_dev_db.py"]
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres@db:5432/family_finance?options=-csearch_path%3Dmoneyman"
+    networks:
+      - internal
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    environment:
+      USE_MOCK_DATA: "false"
+      DATABASE_URL: "postgresql://postgres:postgres@db:5432/family_finance?options=-csearch_path%3Dmoneyman"
+    depends_on:
+      db-seed:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:

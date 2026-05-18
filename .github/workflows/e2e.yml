@@ -1,0 +1,29 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run E2E tests
+        run: make e2e
+
+      - name: Show db-seed logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.db.yml -f docker-compose.test.yml logs db-seed || true
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 14

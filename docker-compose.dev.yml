@@ -1,0 +1,22 @@
+# Dev overlay — use with: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Mounts source code into running containers so changes are reflected without rebuilding.
+# New dependencies (pip/npm) still require --build.
+services:
+  backend:
+    command: [".venv/bin/uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8083", "--reload"]
+    volumes:
+      - ./backend:/app/backend
+      - ./src:/app/src
+      - ./config:/app/config
+
+  frontend:
+    build:
+      target: dev
+    environment:
+      WATCHPACK_POLLING: "true"  # required for file-watching inside Docker on macOS
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - /app/node_modules  # anonymous volume keeps container node_modules intact
+    healthcheck:
+      start_period: 60s  # next dev is slower to boot than the standalone production server

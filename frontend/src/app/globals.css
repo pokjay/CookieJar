@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── CookieJar design tokens (RGB triplets for Tailwind opacity modifiers) ── */
+
+:root {
+  /* Light — CookieJar cream palette */
+  --cj-bg:           245 234 210;   /* #f5ead2 cream */
+  --cj-surface:      236 223 187;   /* #ecdfbb */
+  --cj-elevated:     220 205 168;   /* #dccda8 */
+  --cj-hover:        208 192 152;   /* #d0c098 */
+  --cj-border:       212 196 158;   /* #d4c49e warm tan */
+  --cj-border-strong:192 174 136;   /* #c0ae88 */
+  --cj-text:          42  29  16;   /* #2a1d10 cocoa */
+  --cj-text-2:        58  42  24;
+  --cj-text-3:        90  62  40;
+  --cj-text-muted:   122  90  64;
+  --cj-text-faint:   160 128  90;
+  --cj-accent:       168  90  46;   /* #a85a2e terracotta */
+  --cj-accent-hover: 143  74  36;
+  --cj-accent-text:  168  90  46;
+  /* Semantic data colours — readable on cream */
+  --cj-positive:      21 128  61;   /* green-700  #15803d */
+  --cj-negative:     185  28  28;   /* red-700    #b91c1c */
+  --cj-warning:      180  83   9;   /* amber-700  #b45309 */
+}
+
+.dark {
+  /* Dark — current palette */
+  --cj-bg:             3   7  18;   /* #030712 gray-950 */
+  --cj-surface:       17  24  39;   /* #111827 gray-900 */
+  --cj-elevated:      31  41  55;   /* #1f2937 gray-800 */
+  --cj-hover:         55  65  81;   /* #374151 gray-700 */
+  --cj-border:        31  41  55;   /* #1f2937 */
+  --cj-border-strong: 55  65  81;   /* #374151 */
+  --cj-text:         243 244 246;   /* #f3f4f6 gray-100 */
+  --cj-text-2:       229 231 235;   /* gray-200 */
+  --cj-text-3:       209 213 219;   /* gray-300 */
+  --cj-text-muted:   156 163 175;   /* gray-400 */
+  --cj-text-faint:   107 114 128;   /* gray-500 */
+  --cj-accent:        37  99 235;   /* #2563eb blue-600 */
+  --cj-accent-hover:  59 130 246;   /* blue-500 */
+  --cj-accent-text:   96 165 250;   /* blue-400 */
+  /* Semantic data colours — vivid on dark */
+  --cj-positive:      52 211 153;   /* emerald-400 #34d399 */
+  --cj-negative:     248 113 113;   /* red-400     #f87171 */
+  --cj-warning:      250 204  21;   /* yellow-400  #facc15 */
+}
+
+body {
+  background: rgb(var(--cj-bg));
+  color: rgb(var(--cj-text));
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+}
+
+/* ─── Tremor overrides ──────────────────────────────────────────────────── */
+
+.dark .tremor-Card-root {
+  --tremor-background-default: #111827 !important;
+  --tremor-border-default: #1f2937 !important;
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar        { width: 8px; }
+::-webkit-scrollbar-track  { background: rgb(var(--cj-surface)); }
+::-webkit-scrollbar-thumb  { background: rgb(var(--cj-border-strong)); border-radius: 4px; }
+
+/* ─── Recharts tooltip ──────────────────────────────────────────────────── */
+
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: rgb(var(--cj-elevated)) !important;
+  border: 1px solid rgb(var(--cj-border-strong)) !important;
+  border-radius: 8px !important;
+  color: rgb(var(--cj-text)) !important;
+}
