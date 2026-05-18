@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8083";
+const API_SECRET = process.env.API_SECRET;
 
 async function proxy(request: NextRequest, proxy: string[]) {
   const backendUrl = `${BACKEND_URL}/api/${proxy.join("/")}${request.nextUrl.search}`;
@@ -8,10 +9,14 @@ async function proxy(request: NextRequest, proxy: string[]) {
   const isGet = request.method === "GET" || request.method === "HEAD";
   const body = isGet ? undefined : await request.text();
 
+  const headers: Record<string, string> = {};
+  if (!isGet) headers["Content-Type"] = "application/json";
+  if (API_SECRET) headers["X-API-Secret"] = API_SECRET;
+
   try {
     const response = await fetch(backendUrl, {
       method: request.method,
-      headers: isGet ? undefined : { "Content-Type": "application/json" },
+      headers,
       body,
     });
     const text = await response.text();

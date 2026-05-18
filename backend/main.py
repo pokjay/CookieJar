@@ -1,8 +1,11 @@
 """FastAPI backend."""
 
+import os
+
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from backend.routers.business import router as business_router
 from backend.routers.cash_flow import router as cash_flow_router
@@ -23,6 +26,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_API_SECRET = os.getenv("API_SECRET")
+
+
+@app.middleware("http")
+async def require_api_secret(request: Request, call_next):
+    if _API_SECRET and request.url.path != "/health":
+        if request.headers.get("X-API-Secret") != _API_SECRET:
+            return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+    return await call_next(request)
 
 app.include_router(business_router, prefix="/api")
 app.include_router(categories_router, prefix="/api")
