@@ -36,6 +36,8 @@
 > **Built for personal, self-hosted use only.** Automated access to financial institutions may violate their Terms of Service — run this on your own machine, against your own accounts, and do not expose it as a public or shared service.
 >
 > This software is provided as-is, without any warranty. You use it entirely at your own risk. The authors accept no liability for financial data loss, inaccuracies, or any damages arising from its use.
+>
+> **This project was built with AI assistance ([Claude Code](https://claude.ai/code)).** Review the code carefully before using it with real financial data.
 
 ---
 
