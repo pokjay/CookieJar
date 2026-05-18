@@ -9,6 +9,12 @@
 <p align="center">Family finance dashboard — spending, investments, cash flow, and net worth in one place.</p>
 
 <p align="center">
+  <a href="https://claude.ai/code">
+    <img src="https://img.shields.io/badge/Built%20with-Claude%20Code-D97757?logo=anthropic&logoColor=white" alt="Built with Claude Code">
+  </a>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Next.js-15-black?logo=next.js&logoColor=white" alt="Next.js 15">
   &nbsp;
   <img src="https://img.shields.io/badge/FastAPI-0.11x-009688?logo=fastapi&logoColor=white" alt="FastAPI">
@@ -30,6 +36,8 @@
 > **Built for personal, self-hosted use only.** Automated access to financial institutions may violate their Terms of Service — run this on your own machine, against your own accounts, and do not expose it as a public or shared service.
 >
 > This software is provided as-is, without any warranty. You use it entirely at your own risk. The authors accept no liability for financial data loss, inaccuracies, or any damages arising from its use.
+>
+> **This project was built with AI assistance ([Claude Code](https://claude.ai/code)).** Review the code carefully before using it with real financial data.
 
 ---
 
