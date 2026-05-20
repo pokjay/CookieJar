@@ -15,6 +15,7 @@ const manrope = Manrope({
 export const metadata: Metadata = {
   title: "CookieJar",
   description: "Family finance dashboard",
+  manifest: "/manifest.webmanifest",
   icons: {
     icon: [
       { url: "/brand/favicon-light.svg", media: "(prefers-color-scheme: light)", type: "image/svg+xml" },
