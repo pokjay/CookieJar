@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.0](https://github.com/pokjay/CookieJar/compare/v0.1.0...v0.2.0) (2026-05-20)
+
+
+### Features
+
+* add API secret middleware to protect backend from direct access ([#4](https://github.com/pokjay/CookieJar/issues/4)) ([7b3e179](https://github.com/pokjay/CookieJar/commit/7b3e179da14f94edd8b4c50854ebcd07e0c948fe))
+* add automated Docker builds and release-please versioning ([#10](https://github.com/pokjay/CookieJar/issues/10)) ([a37ab9e](https://github.com/pokjay/CookieJar/commit/a37ab9eb0dc6f0f87760436b9b5c62e099155818))
+* initial public release ([64c6f21](https://github.com/pokjay/CookieJar/commit/64c6f21e8c529ab82f77a7bd1e1e66f51bb2c259))
+
+
+### Bug Fixes
+
+* replace clipped SVG labels with responsive legend on mobile for pie chart ([#8](https://github.com/pokjay/CookieJar/issues/8)) ([194aa95](https://github.com/pokjay/CookieJar/commit/194aa95552af991b57a05c8abfec9759410cc505))
+* switch vercel.json from deprecated routes to rewrites ([#3](https://github.com/pokjay/CookieJar/issues/3)) ([79f866b](https://github.com/pokjay/CookieJar/commit/79f866b8f29a78b8c63031c5b088fca643319f46))
+
 ## [Unreleased]
 
 ### Added
