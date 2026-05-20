@@ -1,0 +1,13 @@
+# Build overlay — adds build contexts so images are built from source instead of pulled from GHCR.
+# Use when you need to test local changes without hot-reload (e.g. CI e2e):
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up --build
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile

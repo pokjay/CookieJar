@@ -2,14 +2,14 @@ COMPOSE      := docker compose
 COMPOSE_APP  := $(COMPOSE) -f docker-compose.yml
 COMPOSE_DEV  := $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
 COMPOSE_DEVDB := $(COMPOSE) -f docker-compose.yml -f docker-compose.db.yml -f docker-compose.dev.yml
-COMPOSE_E2E  := $(COMPOSE) -f docker-compose.yml -f docker-compose.db.yml -f docker-compose.test.yml
+COMPOSE_E2E  := $(COMPOSE) -f docker-compose.yml -f docker-compose.build.yml -f docker-compose.db.yml -f docker-compose.test.yml
 
 .PHONY: up down logs dev dev-db dev-down e2e e2e-up e2e-run e2e-down e2e-clean
 
 # ─── App ──────────────────────────────────────────────────────────────────────
 
 up:
-	$(COMPOSE_APP) up -d --build
+	$(COMPOSE_APP) up -d
 
 down:
 	$(COMPOSE_APP) down --remove-orphans
