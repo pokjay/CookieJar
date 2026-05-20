@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.2](https://github.com/pokjay/CookieJar/compare/v0.2.1...v0.2.2) (2026-05-20)
+
+
+### Bug Fixes
+
+* **ci:** trigger Docker publish on release instead of tag push ([#21](https://github.com/pokjay/CookieJar/issues/21)) ([3122b80](https://github.com/pokjay/CookieJar/commit/3122b80ad752e1187c516f586b4a76f1e0fe16f2))
+
 ## [0.2.1](https://github.com/pokjay/CookieJar/compare/v0.2.0...v0.2.1) (2026-05-20)
 
 
