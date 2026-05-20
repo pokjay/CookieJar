@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.1](https://github.com/pokjay/CookieJar/compare/v0.2.0...v0.2.1) (2026-05-20)
+
+
+### Bug Fixes
+
+* **pwa:** add apple-touch-icon so iOS home screen shows CookieJar logo ([#18](https://github.com/pokjay/CookieJar/issues/18)) ([3bff4aa](https://github.com/pokjay/CookieJar/commit/3bff4aaca4d4d507b2066d80c8d3433aa8c3b74d))
+
 ## [0.2.0](https://github.com/pokjay/CookieJar/compare/v0.1.0...v0.2.0) (2026-05-20)
 
 
