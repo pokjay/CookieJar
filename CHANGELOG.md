@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.3](https://github.com/pokjay/CookieJar/compare/v0.2.2...v0.2.3) (2026-05-21)
+
+
+### Bug Fixes
+
+* **ci:** build Docker images in release-please run so semver tags publish ([#27](https://github.com/pokjay/CookieJar/issues/27)) ([6d65e51](https://github.com/pokjay/CookieJar/commit/6d65e51cddafedc33068dbb4854a6d6e09c33145))
+
 ## [0.2.2](https://github.com/pokjay/CookieJar/compare/v0.2.1...v0.2.2) (2026-05-20)
 
 
