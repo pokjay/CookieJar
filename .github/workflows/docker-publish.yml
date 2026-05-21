@@ -1,8 +1,8 @@
 name: Docker Publish
 
 on:
-  push:
-    branches: [main]
+  release:
+    types: [published]
   workflow_call:
     inputs:
       version:
@@ -23,6 +23,7 @@ permissions:
 jobs:
   build-backend:
     runs-on: ubuntu-latest
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v')
     steps:
       - uses: actions/checkout@v6
 
@@ -57,6 +58,7 @@ jobs:
 
   build-frontend:
     runs-on: ubuntu-latest
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v')
     steps:
       - uses: actions/checkout@v6
 
