@@ -12,7 +12,12 @@ MIGRATIONS_DIR = Path(__file__).parent.parent / "db" / "migrations"
 
 
 def _bootstrap(url: str) -> None:
-    """Create migration tracking for pre-existing databases (e.g. moneyman imports)."""
+    """Ensure public.schema_migrations tracks the initial migration for existing databases.
+
+    Idempotent: CREATE TABLE IF NOT EXISTS and ON CONFLICT DO NOTHING make it safe to run
+    repeatedly. Only acts when the moneyman schema already exists (i.e. a pre-existing DB
+    imported from moneyman); fresh databases are left untouched for dbmate to set up.
+    """
     from sqlalchemy import create_engine, text
 
     engine = create_engine(url)
@@ -23,16 +28,6 @@ def _bootstrap(url: str) -> None:
         if not schema_exists:
             return
 
-        migrations_tracked = conn.execute(
-            text(
-                "SELECT 1 FROM information_schema.tables "
-                "WHERE table_name = 'schema_migrations' "
-                "AND table_schema IN ('public', 'moneyman')"
-            )
-        ).fetchone()
-        if migrations_tracked:
-            return
-
     with engine.begin() as conn:
         conn.execute(
             text(
@@ -41,24 +36,27 @@ def _bootstrap(url: str) -> None:
                 "CONSTRAINT schema_migrations_pkey PRIMARY KEY (version))"
             )
         )
-        conn.execute(
+        result = conn.execute(
             text(
                 "INSERT INTO public.schema_migrations (version) "
                 "VALUES ('20260417000000') ON CONFLICT DO NOTHING"
             )
         )
-    print("Bootstrapped migration tracking for existing database.")
+    if result.rowcount > 0:
+        print("Bootstrapped migration tracking for existing database.")
 
 
 def _dbmate_url(url: str) -> str:
-    """Strip search_path from DATABASE_URL for dbmate.
+    """Prepare DATABASE_URL for dbmate.
 
-    Migrations set search_path explicitly; without this dbmate would create
-    its schema_migrations table in moneyman (which doesn't exist on a fresh DB).
+    - Strips search_path (options=) so schema_migrations lands in public schema.
+    - Defaults sslmode=disable when unset: psycopg2 tolerates no-SSL servers but
+      dbmate's pq driver defaults to require for non-localhost hosts.
     """
     parsed = urlparse(url)
     params = parse_qs(parsed.query, keep_blank_values=True)
     params.pop("options", None)
+    params.setdefault("sslmode", ["disable"])
     return urlunparse(parsed._replace(query=urlencode({k: v[0] for k, v in params.items()})))
 
 
