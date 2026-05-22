@@ -1,7 +1,4 @@
-import json
-from pathlib import Path
-
-_SETTINGS_FILE = Path("config/app_settings.json")
+from src.db.connection import is_mock_mode
 
 _DEFAULTS: dict = {
     "sign_flipped_accounts": [],
@@ -12,19 +9,24 @@ _DEFAULTS: dict = {
     "cash_flow_accounts": [],
 }
 
+_memory_settings: dict | None = None
+
 
 def load_settings() -> dict:
-    """Load persisted app settings from disk, falling back to defaults."""
-    if _SETTINGS_FILE.exists():
-        try:
-            data = json.loads(_SETTINGS_FILE.read_text())
-            return {**_DEFAULTS, **data}
-        except Exception:
-            pass
-    return dict(_DEFAULTS)
+    if is_mock_mode():
+        if _memory_settings is None:
+            return dict(_DEFAULTS)
+        return {**_DEFAULTS, **_memory_settings}
+    from src.db.queries.settings import get_settings
+
+    return {**_DEFAULTS, **get_settings()}
 
 
 def save_settings(settings: dict) -> None:
-    """Persist app settings to disk."""
-    _SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _SETTINGS_FILE.write_text(json.dumps(settings, indent=2, default=str))
+    global _memory_settings
+    if is_mock_mode():
+        _memory_settings = dict(settings)
+        return
+    from src.db.mutations.settings import upsert_settings
+
+    upsert_settings(settings)
