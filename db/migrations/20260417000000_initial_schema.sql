@@ -1,6 +1,6 @@
 -- migrate:up
 
-CREATE SCHEMA moneyman;
+CREATE SCHEMA IF NOT EXISTS moneyman;
 
 -- Enums
 CREATE TYPE moneyman.cash_flow_type AS ENUM (

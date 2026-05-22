@@ -382,10 +382,10 @@ CREATE TABLE moneyman.app_settings (
 
 
 --
--- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
+-- Name: schema_migrations; Type: TABLE; Schema: moneyman; Owner: -
 --
 
-CREATE TABLE public.schema_migrations (
+CREATE TABLE moneyman.schema_migrations (
     version character varying NOT NULL
 );
 
@@ -476,10 +476,10 @@ ALTER TABLE ONLY moneyman.business_transaction_mappings
 
 
 --
--- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: moneyman; Owner: -
 --
 
-ALTER TABLE ONLY public.schema_migrations
+ALTER TABLE ONLY moneyman.schema_migrations
     ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
 
 
@@ -517,6 +517,6 @@ ALTER TABLE ONLY moneyman.business_transaction_mappings
 -- Dbmate schema migrations
 --
 
-INSERT INTO public.schema_migrations (version) VALUES
+INSERT INTO moneyman.schema_migrations (version) VALUES
     ('20260417000000'),
     ('20260522000000');
