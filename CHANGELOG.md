@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.5](https://github.com/pokjay/CookieJar/compare/v0.2.4...v0.2.5) (2026-05-22)
+
+
+### Bug Fixes
+
+* make run_migrations.py robust for existing-DB and SSL-less setups ([#32](https://github.com/pokjay/CookieJar/issues/32)) ([5f1a07d](https://github.com/pokjay/CookieJar/commit/5f1a07d2171aba604e04088b839c6670ad867fdd))
+
 ## [0.2.4](https://github.com/pokjay/CookieJar/compare/v0.2.3...v0.2.4) (2026-05-22)
 
 
