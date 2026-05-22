@@ -51,14 +51,16 @@ def _bootstrap(url: str) -> None:
 
 
 def _dbmate_url(url: str) -> str:
-    """Strip search_path from DATABASE_URL for dbmate.
+    """Prepare DATABASE_URL for dbmate.
 
-    Migrations set search_path explicitly; without this dbmate would create
-    its schema_migrations table in moneyman (which doesn't exist on a fresh DB).
+    - Strips search_path (options=) so schema_migrations lands in public schema.
+    - Defaults sslmode=disable when unset: psycopg2 tolerates no-SSL servers but
+      dbmate's pq driver defaults to require for non-localhost hosts.
     """
     parsed = urlparse(url)
     params = parse_qs(parsed.query, keep_blank_values=True)
     params.pop("options", None)
+    params.setdefault("sslmode", ["disable"])
     return urlunparse(parsed._replace(query=urlencode({k: v[0] for k, v in params.items()})))
 
 
