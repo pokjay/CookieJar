@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.7](https://github.com/pokjay/CookieJar/compare/v0.2.6...v0.2.7) (2026-05-22)
+
+
+### Bug Fixes
+
+* use CAST() instead of ::jsonb in upsert_settings ([#36](https://github.com/pokjay/CookieJar/issues/36)) ([bb2d07d](https://github.com/pokjay/CookieJar/commit/bb2d07dee268e7e699a04c9b37c1963c701694c8))
+
 ## [0.2.6](https://github.com/pokjay/CookieJar/compare/v0.2.5...v0.2.6) (2026-05-22)
 
 
