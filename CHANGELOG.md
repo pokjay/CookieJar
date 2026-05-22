@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.6](https://github.com/pokjay/CookieJar/compare/v0.2.5...v0.2.6) (2026-05-22)
+
+
+### Bug Fixes
+
+* store dbmate schema_migrations in the moneyman schema ([#34](https://github.com/pokjay/CookieJar/issues/34)) ([b73bd7d](https://github.com/pokjay/CookieJar/commit/b73bd7d5a10c7de7db5c1b0c546114811fc00e2c))
+
 ## [0.2.5](https://github.com/pokjay/CookieJar/compare/v0.2.4...v0.2.5) (2026-05-22)
 
 
