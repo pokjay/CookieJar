@@ -1,9 +1,11 @@
 import json
 
-from src.db.connection import execute_mutation
+from src.db.connection import execute_mutation, is_mock_mode
 
 
 def upsert_settings(data: dict) -> None:
+    if is_mock_mode():
+        return
     execute_mutation(
         """
         INSERT INTO app_settings (id, data)

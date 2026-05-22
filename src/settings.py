@@ -27,6 +27,8 @@ def save_settings(settings: dict) -> None:
     if is_mock_mode():
         _memory_settings = dict(settings)
         return
+    from backend.cache import clear_all
     from src.db.mutations.settings import upsert_settings
 
     upsert_settings(settings)
+    clear_all()
