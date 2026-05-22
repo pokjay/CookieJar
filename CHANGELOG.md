@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.4](https://github.com/pokjay/CookieJar/compare/v0.2.3...v0.2.4) (2026-05-22)
+
+
+### Bug Fixes
+
+* persist settings in PostgreSQL to fix permission error ([#30](https://github.com/pokjay/CookieJar/issues/30)) ([de47ecc](https://github.com/pokjay/CookieJar/commit/de47ecc5d59434fc5af40a60b411d3157a4d76b5)), closes [#29](https://github.com/pokjay/CookieJar/issues/29)
+
 ## [0.2.3](https://github.com/pokjay/CookieJar/compare/v0.2.2...v0.2.3) (2026-05-21)
 
 
