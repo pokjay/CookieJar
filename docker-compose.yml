@@ -4,8 +4,6 @@ services:
     env_file:
       - path: .env
         required: false
-    volumes:
-      - ./config:/app/config
     # Port 8083 is not exposed externally — frontend proxies all /api/* requests.
     # Uncomment the lines below only for local API debugging:
     # ports:
