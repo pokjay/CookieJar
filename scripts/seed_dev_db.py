@@ -19,20 +19,21 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-MIGRATIONS_DIR = Path(__file__).parent.parent / "db" / "migrations"
+RUN_MIGRATIONS = Path(__file__).parent / "run_migrations.py"
 
 
 def _apply_migrations(url: str) -> None:
     result = subprocess.run(
-        ["dbmate", "--url", url, "--migrations-dir", str(MIGRATIONS_DIR), "up"],
+        [sys.executable, str(RUN_MIGRATIONS)],
+        env={**os.environ, "DATABASE_URL": url},
         capture_output=True,
         text=True,
     )
+    if result.stdout.strip():
+        print(result.stdout)
     if result.returncode != 0:
         print(f"Migration failed:\n{result.stderr}", file=sys.stderr)
         sys.exit(1)
-    if result.stdout.strip():
-        print(result.stdout)
 
 
 def main() -> None:

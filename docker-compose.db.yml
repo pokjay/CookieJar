@@ -23,7 +23,7 @@ services:
       dockerfile: backend/Dockerfile
     command: [".venv/bin/python", "scripts/seed_dev_db.py"]
     environment:
-      DATABASE_URL: "postgresql://postgres:postgres@db:5432/family_finance?options=-csearch_path%3Dmoneyman"
+      DATABASE_URL: "postgresql://postgres:postgres@db:5432/family_finance?options=-csearch_path%3Dmoneyman&sslmode=disable"
     networks:
       - internal
     depends_on:
@@ -34,7 +34,7 @@ services:
   backend:
     environment:
       USE_MOCK_DATA: "false"
-      DATABASE_URL: "postgresql://postgres:postgres@db:5432/family_finance?options=-csearch_path%3Dmoneyman"
+      DATABASE_URL: "postgresql://postgres:postgres@db:5432/family_finance?options=-csearch_path%3Dmoneyman&sslmode=disable"
     depends_on:
       db-seed:
         condition: service_completed_successfully
