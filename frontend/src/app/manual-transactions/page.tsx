@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import {
   getManualTransactionsMeta,
+  getSettingsAccounts,
   checkDuplicate,
   createManualTransaction,
   bulkImportTransactions,
@@ -57,6 +58,36 @@ interface CsvRow {
 const REQUIRED_CSV_COLS = ["account", "activity_date", "charged_currency", "original_amount", "original_currency", "description"];
 const OPTIONAL_CSV_COLS = ["unique_id", "charged_amount", "identifier", "additional_info", "charged_date", "cash_flow_type"];
 const ALL_CSV_COLS = [...REQUIRED_CSV_COLS, ...OPTIONAL_CSV_COLS];
+
+type FixedInputKind = "account" | "currency" | "cash_flow_type" | "date" | "number" | "text";
+
+const FIXED_INPUT_KIND: Record<string, FixedInputKind> = {
+  account: "account",
+  activity_date: "date",
+  charged_date: "date",
+  original_amount: "number",
+  charged_amount: "number",
+  original_currency: "currency",
+  charged_currency: "currency",
+  cash_flow_type: "cash_flow_type",
+  description: "text",
+  identifier: "text",
+  additional_info: "text",
+  unique_id: "text",
+};
+
+// "fixed" entries apply their value to every imported row.
+type MappingEntry =
+  | { kind: "csv"; csvCol: string }
+  | { kind: "fixed"; value: string };
+
+type Mapping = Record<string, MappingEntry>;
+
+function isEntryFilled(entry: MappingEntry | undefined): boolean {
+  if (!entry) return false;
+  if (entry.kind === "csv") return !!entry.csvCol;
+  return entry.value.trim() !== "";
+}
 
 const today = new Date().toISOString().split("T")[0];
 
@@ -567,30 +598,35 @@ function PreviewTable({ row }: { row: ManualTransactionPayload }) {
 
 // ─── CsvImportTab ─────────────────────────────────────────────────────────────
 
-function autoDetectMapping(csvCols: string[]): Record<string, string> {
-  const mapping: Record<string, string> = {};
+function autoDetectMapping(csvCols: string[]): Mapping {
+  const mapping: Mapping = {};
   for (const target of ALL_CSV_COLS) {
     const exact = csvCols.find((c) => c.toLowerCase() === target.toLowerCase());
-    if (exact) { mapping[target] = exact; continue; }
+    if (exact) { mapping[target] = { kind: "csv", csvCol: exact }; continue; }
     // loose match: target contains col name or vice-versa
     const loose = csvCols.find(
       (c) =>
         c.toLowerCase().includes(target.toLowerCase()) ||
         target.toLowerCase().includes(c.toLowerCase())
     );
-    if (loose) mapping[target] = loose;
+    if (loose) mapping[target] = { kind: "csv", csvCol: loose };
   }
   return mapping;
 }
 
 function applyMapping(
   rawRows: Record<string, string>[],
-  mapping: Record<string, string>
+  mapping: Mapping
 ): Record<string, string>[] {
   return rawRows.map((row) => {
     const out: Record<string, string> = {};
-    for (const [target, csvCol] of Object.entries(mapping)) {
-      if (csvCol && row[csvCol] !== undefined) out[target] = row[csvCol];
+    for (const [target, entry] of Object.entries(mapping)) {
+      if (!entry) continue;
+      if (entry.kind === "csv") {
+        if (entry.csvCol && row[entry.csvCol] !== undefined) out[target] = row[entry.csvCol];
+      } else {
+        if (entry.value !== "") out[target] = entry.value;
+      }
     }
     return out;
   });
@@ -600,13 +636,20 @@ function CsvImportTab({ meta }: { meta: Meta }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [rawRows, setRawRows] = useState<Record<string, string>[] | null>(null);
   const [csvColumns, setCsvColumns] = useState<string[]>([]);
-  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+  const [columnMapping, setColumnMapping] = useState<Mapping>({});
   const [showMapping, setShowMapping] = useState(false);
   const [rows, setRows] = useState<CsvRow[] | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ ok: boolean; imported: number } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [knownAccounts, setKnownAccounts] = useState<string[]>([]);
+
+  useEffect(() => {
+    getSettingsAccounts()
+      .then(setKnownAccounts)
+      .catch(() => setKnownAccounts([]));
+  }, []);
 
   function reset() {
     setRawRows(null);
@@ -754,7 +797,9 @@ function CsvImportTab({ meta }: { meta: Meta }) {
           rawRows={rawRows}
           csvColumns={csvColumns}
           mapping={columnMapping}
+          currencies={meta.currencies}
           cashFlowTypes={meta.cash_flow_types}
+          knownAccounts={knownAccounts}
           onChange={setColumnMapping}
           onApply={handleApplyMapping}
           onCancel={reset}
@@ -876,39 +921,65 @@ function CsvImportTab({ meta }: { meta: Meta }) {
 
 // ─── ColumnMapper ─────────────────────────────────────────────────────────────
 
+const FIXED_SENTINEL = "__fixed__";
+
 function ColumnMapper({
   rawRows,
   csvColumns,
   mapping,
+  currencies,
   cashFlowTypes,
+  knownAccounts,
   onChange,
   onApply,
   onCancel,
 }: {
   rawRows: Record<string, string>[];
   csvColumns: string[];
-  mapping: Record<string, string>;
+  mapping: Mapping;
+  currencies: string[];
   cashFlowTypes: string[];
-  onChange: (m: Record<string, string>) => void;
+  knownAccounts: string[];
+  onChange: (m: Mapping) => void;
   onApply: () => void;
   onCancel: () => void;
 }) {
   const previewRows = rawRows.slice(0, 5);
-  const missingRequired = REQUIRED_CSV_COLS.filter((f) => !mapping[f]);
+  const missingRequired = REQUIRED_CSV_COLS.filter((f) => !isEntryFilled(mapping[f]));
   const canApply = missingRequired.length === 0;
 
-  function setField(target: string, csvCol: string) {
-    onChange({ ...mapping, [target]: csvCol });
+  function setEntry(target: string, entry: MappingEntry | null) {
+    const next: Mapping = { ...mapping };
+    if (entry === null) delete next[target];
+    else next[target] = entry;
+    onChange(next);
+  }
+
+  function onSourceChange(target: string, raw: string) {
+    if (raw === "") setEntry(target, null);
+    else if (raw === FIXED_SENTINEL) {
+      const existing = mapping[target];
+      const value = existing && existing.kind === "fixed" ? existing.value : "";
+      setEntry(target, { kind: "fixed", value });
+    } else setEntry(target, { kind: "csv", csvCol: raw });
+  }
+
+  function onFixedValueChange(target: string, value: string) {
+    setEntry(target, { kind: "fixed", value });
   }
 
   return (
     <div className="rounded-xl border border-cj-warning/40 bg-cj-warning/5 space-y-0 overflow-hidden">
+      <datalist id="manual-csv-accounts-list">
+        {knownAccounts.map((a) => <option key={a} value={a} />)}
+      </datalist>
+
       {/* Header */}
       <div className="px-5 py-4 border-b border-cj-warning/30 flex items-start justify-between gap-4">
         <div>
           <h3 className="text-sm font-semibold text-cj-warning">Map Your Columns</h3>
           <p className="text-cj-warning/70 text-xs mt-0.5">
-            Your CSV columns don&apos;t match the expected format. Assign each field to one of your columns.
+            Your CSV columns don&apos;t match the expected format. For each field, map to a CSV column or enter a fixed value that applies to every row.
           </p>
         </div>
         <button onClick={onCancel} className="text-cj-text-faint hover:text-cj-text-3 flex-shrink-0 mt-0.5">
@@ -951,37 +1022,52 @@ function ColumnMapper({
       <div className="px-5 py-4 space-y-3">
         <p className="text-xs font-medium text-cj-text-muted uppercase tracking-wide">Field Mapping</p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
           {ALL_CSV_COLS.map((target) => {
             const isRequired = REQUIRED_CSV_COLS.includes(target);
-            const isMapped = !!mapping[target];
+            const entry = mapping[target];
+            const filled = isEntryFilled(entry);
+            const sourceValue =
+              !entry ? "" : entry.kind === "fixed" ? FIXED_SENTINEL : entry.csvCol;
             return (
-              <div key={target} className="flex items-center gap-3">
-                <div className="w-40 flex-shrink-0 flex items-center gap-1.5">
-                  <span className={`text-xs font-medium ${isMapped ? "text-cj-text-3" : isRequired ? "text-cj-negative" : "text-cj-text-faint"}`}>
+              <div key={target} className="flex items-start gap-3">
+                <div className="w-40 flex-shrink-0 pt-1.5 flex items-center gap-1.5">
+                  <span className={`text-xs font-medium ${filled ? "text-cj-text-3" : isRequired ? "text-cj-negative" : "text-cj-text-faint"}`}>
                     {target}
                   </span>
                   {isRequired && (
                     <span className="text-cj-negative text-xs">*</span>
                   )}
                 </div>
-                <select
-                  value={mapping[target] ?? ""}
-                  onChange={(e) => setField(target, e.target.value)}
-                  className={[
-                    "flex-1 min-w-0 bg-cj-elevated border rounded-lg px-2.5 py-1.5 text-xs text-cj-text focus:outline-none focus:ring-2 focus:ring-cj-accent transition-colors",
-                    !isMapped && isRequired
-                      ? "border-red-700"
-                      : isMapped
-                      ? "border-cj-border-strong"
-                      : "border-cj-border-strong",
-                  ].join(" ")}
-                >
-                  <option value="">— skip —</option>
-                  {csvColumns.map((col) => (
-                    <option key={col} value={col}>{col}</option>
-                  ))}
-                </select>
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  <select
+                    value={sourceValue}
+                    onChange={(e) => onSourceChange(target, e.target.value)}
+                    className={[
+                      "w-full bg-cj-elevated border rounded-lg px-2.5 py-1.5 text-xs text-cj-text focus:outline-none focus:ring-2 focus:ring-cj-accent transition-colors",
+                      !filled && isRequired ? "border-red-700" : "border-cj-border-strong",
+                    ].join(" ")}
+                  >
+                    <option value="">— skip —</option>
+                    {csvColumns.length > 0 && (
+                      <optgroup label="Map to CSV column">
+                        {csvColumns.map((col) => (
+                          <option key={col} value={col}>{col}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <option value={FIXED_SENTINEL}>— enter fixed value —</option>
+                  </select>
+                  {entry?.kind === "fixed" && (
+                    <FixedValueInput
+                      target={target}
+                      value={entry.value}
+                      currencies={currencies}
+                      cashFlowTypes={cashFlowTypes}
+                      onChange={(v) => onFixedValueChange(target, v)}
+                    />
+                  )}
+                </div>
               </div>
             );
           })}
@@ -1010,5 +1096,85 @@ function ColumnMapper({
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── FixedValueInput ──────────────────────────────────────────────────────────
+
+const fixedInputCls =
+  "w-full bg-cj-elevated border border-cj-border-strong rounded-lg px-2.5 py-1.5 text-xs text-cj-text placeholder-cj-text-faint focus:outline-none focus:ring-2 focus:ring-cj-accent focus:border-transparent transition-colors";
+
+function FixedValueInput({
+  target,
+  value,
+  currencies,
+  cashFlowTypes,
+  onChange,
+}: {
+  target: string;
+  value: string;
+  currencies: string[];
+  cashFlowTypes: string[];
+  onChange: (v: string) => void;
+}) {
+  const kind: FixedInputKind = FIXED_INPUT_KIND[target] ?? "text";
+
+  if (kind === "currency") {
+    return (
+      <select className={fixedInputCls} value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">— pick a currency —</option>
+        {currencies.map((c) => <option key={c} value={c}>{c}</option>)}
+      </select>
+    );
+  }
+  if (kind === "cash_flow_type") {
+    return (
+      <select className={fixedInputCls} value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">— pick a type —</option>
+        {cashFlowTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+      </select>
+    );
+  }
+  if (kind === "account") {
+    return (
+      <input
+        list="manual-csv-accounts-list"
+        className={fixedInputCls}
+        placeholder="Pick an existing account or type a new one"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
+  }
+  if (kind === "date") {
+    return (
+      <input
+        type="date"
+        className={fixedInputCls}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
+  }
+  if (kind === "number") {
+    return (
+      <input
+        type="number"
+        step="any"
+        className={fixedInputCls}
+        placeholder="0.00"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
+  }
+  return (
+    <input
+      type="text"
+      className={fixedInputCls}
+      placeholder={`Value for every row`}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
   );
 }
