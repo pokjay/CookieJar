@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.3.0](https://github.com/pokjay/CookieJar/compare/v0.2.7...v0.3.0) (2026-05-23)
+
+
+### Features
+
+* **manual-transactions:** support fixed value per field in CSV import mapper ([#39](https://github.com/pokjay/CookieJar/issues/39)) ([a0813cf](https://github.com/pokjay/CookieJar/commit/a0813cfe18d41157aa8794fd02286bb8ac5246a6))
+
 ## [0.2.7](https://github.com/pokjay/CookieJar/compare/v0.2.6...v0.2.7) (2026-05-22)
 
 
