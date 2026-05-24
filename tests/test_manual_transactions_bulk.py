@@ -160,3 +160,58 @@ def test_bulk_import_charged_amount_falls_back_to_original_amount(bulk_endpoint,
         ).one()
     assert float(result.charged_amount) == 250.0
     assert float(result.original_amount) == 250.0
+
+
+def test_bulk_import_persists_per_row_show_in_transactions(bulk_endpoint, migrated_db):
+    """Issue #48: each row's show_in_transactions must be written through to the DB,
+    and missing it on the payload must default to true (matching the column default)."""
+    account = "pytest-bulk-show-in-txns"
+    rows_in = [
+        {
+            "account": account,
+            "activity_date": "2026-04-06",
+            "charged_currency": "ILS",
+            "original_amount": 10.0,
+            "original_currency": "ILS",
+            "description": "Visible row",
+            "cash_flow_type": "expense",
+            "show_in_transactions": True,
+        },
+        {
+            "account": account,
+            "activity_date": "2026-04-07",
+            "charged_currency": "ILS",
+            "original_amount": 20.0,
+            "original_currency": "ILS",
+            "description": "Hidden row",
+            "cash_flow_type": "expense",
+            "show_in_transactions": False,
+        },
+        {
+            "account": account,
+            "activity_date": "2026-04-08",
+            "charged_currency": "ILS",
+            "original_amount": 30.0,
+            "original_currency": "ILS",
+            "description": "Default row",
+            "cash_flow_type": "expense",
+            # show_in_transactions omitted — must default to true
+        },
+    ]
+    bulk_endpoint(rows_in)
+
+    sql = sa.text(
+        """
+        SELECT description, show_in_transactions
+        FROM moneyman.transactions_manual
+        WHERE account = :account
+        ORDER BY activity_date
+        """
+    )
+    with migrated_db.connect() as conn:
+        rows = [dict(r._mapping) for r in conn.execute(sql, {"account": account}).fetchall()]
+
+    by_desc = {r["description"]: r for r in rows}
+    assert by_desc["Visible row"]["show_in_transactions"] is True
+    assert by_desc["Hidden row"]["show_in_transactions"] is False
+    assert by_desc["Default row"]["show_in_transactions"] is True

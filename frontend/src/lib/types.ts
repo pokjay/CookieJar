@@ -281,6 +281,7 @@ export interface ManualTransactionPayload {
   additional_info?: string;
   charged_date?: string;
   cash_flow_type: string;
+  show_in_transactions?: boolean;
 }
 
 export interface BulkImportPayload {

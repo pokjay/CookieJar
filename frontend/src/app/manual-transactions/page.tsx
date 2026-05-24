@@ -31,6 +31,7 @@ interface FormState {
   additional_info: string;
   charged_date: string;
   cash_flow_type: string;
+  show_in_transactions: boolean;
 }
 
 interface CsvRow {
@@ -47,6 +48,7 @@ interface CsvRow {
   additional_info?: string;
   charged_date?: string;
   cash_flow_type?: string;
+  show_in_transactions?: string;
   // validation metadata
   _errors: string[];
   _duplicate: boolean;
@@ -56,10 +58,10 @@ interface CsvRow {
 // ─── constants ────────────────────────────────────────────────────────────────
 
 const REQUIRED_CSV_COLS = ["account", "activity_date", "charged_currency", "original_amount", "original_currency", "description"];
-const OPTIONAL_CSV_COLS = ["unique_id", "charged_amount", "identifier", "additional_info", "charged_date", "cash_flow_type"];
+const OPTIONAL_CSV_COLS = ["unique_id", "charged_amount", "identifier", "additional_info", "charged_date", "cash_flow_type", "show_in_transactions"];
 const ALL_CSV_COLS = [...REQUIRED_CSV_COLS, ...OPTIONAL_CSV_COLS];
 // Optional columns the preview table always shows so users can edit them per row even when the CSV omitted them.
-const ALWAYS_SHOW_COLS = new Set([...REQUIRED_CSV_COLS, "cash_flow_type"]);
+const ALWAYS_SHOW_COLS = new Set([...REQUIRED_CSV_COLS, "cash_flow_type", "show_in_transactions"]);
 
 // Per-column min-width for the editable preview cells. Tuned so the table can shrink
 // below ~1100px without inputs collapsing. Narrow cells (currencies, cash_flow_type)
@@ -77,9 +79,10 @@ const CELL_MIN_WIDTH: Record<string, string> = {
   charged_date: "min-w-[120px]",
   cash_flow_type: "min-w-[110px]",
   unique_id: "min-w-[120px]",
+  show_in_transactions: "min-w-[80px]",
 };
 
-type FixedInputKind = "account" | "currency" | "cash_flow_type" | "date" | "number" | "text";
+type FixedInputKind = "account" | "currency" | "cash_flow_type" | "date" | "number" | "text" | "boolean";
 
 const FIXED_INPUT_KIND: Record<string, FixedInputKind> = {
   account: "account",
@@ -94,6 +97,7 @@ const FIXED_INPUT_KIND: Record<string, FixedInputKind> = {
   identifier: "text",
   additional_info: "text",
   unique_id: "text",
+  show_in_transactions: "boolean",
 };
 
 // "fixed" entries apply their value to every imported row.
@@ -125,7 +129,21 @@ function emptyForm(meta: Meta): FormState {
     additional_info: "",
     charged_date: "",
     cash_flow_type: meta.cash_flow_types.includes("expense") ? "expense" : (meta.cash_flow_types[0] ?? "expense"),
+    show_in_transactions: true,
   };
+}
+
+// CSV boolean cells accept "true"/"false"/"1"/"0" (case-insensitive) or blank.
+// Blank/missing means "use default" (true). Anything else is a validation error.
+const BOOLEAN_TRUE_VALUES = new Set(["true", "1"]);
+const BOOLEAN_FALSE_VALUES = new Set(["false", "0"]);
+
+function parseBooleanCell(val: string | undefined): boolean | null {
+  if (val === undefined || val.trim() === "") return true;
+  const v = val.trim().toLowerCase();
+  if (BOOLEAN_TRUE_VALUES.has(v)) return true;
+  if (BOOLEAN_FALSE_VALUES.has(v)) return false;
+  return null;
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -198,12 +216,17 @@ function validateCsvRow(row: Record<string, string>, cashFlowTypes: string[]): s
   if (row.cash_flow_type && !cashFlowTypes.includes(row.cash_flow_type.trim())) {
     errs.push(`cash_flow_type must be one of: ${cashFlowTypes.join(", ")}`);
   }
+  if (row.show_in_transactions !== undefined && parseBooleanCell(row.show_in_transactions) === null) {
+    errs.push("show_in_transactions must be true/false/1/0 (or blank)");
+  }
   return errs;
 }
 
 function rowToPayload(row: CsvRow): ManualTransactionPayload {
   const orig = parseFloat(stripThousands(row.original_amount ?? "0"));
   const charged = row.charged_amount ? parseFloat(stripThousands(row.charged_amount)) : orig;
+  // parseBooleanCell guarantees a boolean here — validation blocks invalid values.
+  const showInTransactions = parseBooleanCell(row.show_in_transactions) ?? true;
   return {
     unique_id: row.unique_id || undefined,
     account: row.account!,
@@ -217,6 +240,7 @@ function rowToPayload(row: CsvRow): ManualTransactionPayload {
     additional_info: row.additional_info || undefined,
     charged_date: row.charged_date || undefined,
     cash_flow_type: row.cash_flow_type || "expense",
+    show_in_transactions: showInTransactions,
   };
 }
 
@@ -348,6 +372,7 @@ function ManualEntryTab({ meta }: { meta: Meta }) {
       additional_info: form.additional_info.trim() || undefined,
       charged_date: form.charged_date || undefined,
       cash_flow_type: form.cash_flow_type,
+      show_in_transactions: form.show_in_transactions,
     };
 
     try {
@@ -521,6 +546,15 @@ function ManualEntryTab({ meta }: { meta: Meta }) {
                 onChange={(e) => patch({ additional_info: e.target.value })}
               />
             </Field>
+            <label className="flex items-center gap-2 mt-1 sm:col-span-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-cj-border-strong bg-cj-elevated text-cj-accent focus:ring-2 focus:ring-cj-accent"
+                checked={form.show_in_transactions}
+                onChange={(e) => patch({ show_in_transactions: e.target.checked })}
+              />
+              <span className="text-sm text-cj-text-3">Show in transactions list</span>
+            </label>
           </div>
         </details>
 
@@ -594,6 +628,7 @@ function PreviewTable({ row }: { row: ManualTransactionPayload }) {
     ["Original Amount", `${row.original_amount} ${row.original_currency}`],
     ["Charged Amount", `${row.charged_amount ?? row.original_amount} ${row.charged_currency}`],
     ["Cash Flow Type", row.cash_flow_type],
+    ["Show in transactions", row.show_in_transactions === false ? "No" : "Yes"],
     ...(row.identifier ? [["Identifier", row.identifier] as [string, string]] : []),
     ...(row.charged_date ? [["Charged Date", row.charged_date] as [string, string]] : []),
     ...(row.additional_info ? [["Additional Info", row.additional_info] as [string, string]] : []),
@@ -1214,6 +1249,21 @@ function FixedValueInput({
       />
     );
   }
+  if (kind === "boolean") {
+    // Empty string ("blank") parses as `true` in the CSV pipeline, so treat unset as checked.
+    const checked = parseBooleanCell(value) !== false;
+    return (
+      <label className="flex items-center gap-2 px-1 py-1 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          className="h-4 w-4 rounded border-cj-border-strong bg-cj-elevated text-cj-accent focus:ring-2 focus:ring-cj-accent"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked ? "true" : "false")}
+        />
+        <span className="text-xs text-cj-text-3">{checked ? "true" : "false"}</span>
+      </label>
+    );
+  }
   return (
     <input
       type="text"
@@ -1293,6 +1343,25 @@ function EditableCell({
         onChange={onChange}
         className={cellInputCls}
       />
+    );
+  }
+  if (kind === "boolean") {
+    // Blank/missing parses as `true`, so an unset cell renders checked.
+    const parsed = parseBooleanCell(value);
+    const invalid = parsed === null;
+    const checked = parsed !== false;
+    return (
+      <label
+        className={`flex items-center gap-2 px-1 py-1 cursor-pointer select-none ${invalid ? "text-cj-negative" : ""}`}
+      >
+        <input
+          type="checkbox"
+          className="h-4 w-4 rounded border-cj-border-strong bg-cj-elevated text-cj-accent focus:ring-2 focus:ring-cj-accent"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked ? "true" : "false")}
+        />
+        <span className="text-xs">{invalid ? value : checked ? "true" : "false"}</span>
+      </label>
     );
   }
   // dates and numbers stay as text inputs so non-ISO dates and thousand-separated numbers
