@@ -26,6 +26,12 @@ services:
     environment:
       BASE_URL: "http://frontend:3000"
       AUTH_PASSWORD: "e2e-pass"
+      # DB connection so the manual-transactions import test can verify persistence.
+      PGHOST: "db"
+      PGPORT: "5432"
+      PGUSER: "postgres"
+      PGPASSWORD: "postgres"
+      PGDATABASE: "family_finance"
 
 volumes:
   e2e_node_modules:

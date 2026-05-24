@@ -20,6 +20,11 @@ dev = [
     "pytest>=9.0.2",
 ]
 
+[tool.pytest.ini_options]
+markers = [
+    "integration: tests that require a real PostgreSQL instance (set TEST_DATABASE_URL).",
+]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100
