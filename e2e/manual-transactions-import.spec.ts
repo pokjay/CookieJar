@@ -66,6 +66,13 @@ function cell(page: Page, rowIdx: number, col: string): Locator {
   return row(page, rowIdx).getByTestId(`preview-cell-${col}`).locator("input, select").first();
 }
 
+// Tests in this file share the moneyman.transactions_manual table — they all
+// insert/clean up rows whose account starts with ACCOUNT. With Playwright's
+// default parallelism they'd race (one test's beforeEach cleanup wipes another
+// test's just-inserted rows mid-import), so force serial execution inside this
+// file. Other spec files keep their parallelism via the project-level config.
+test.describe.configure({ mode: "serial" });
+
 test.describe("Manual Transactions — CSV Import with per-row editing (#41)", () => {
   test.beforeEach(cleanupAccount);
   test.afterEach(cleanupAccount);
