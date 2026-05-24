@@ -58,6 +58,26 @@ interface CsvRow {
 const REQUIRED_CSV_COLS = ["account", "activity_date", "charged_currency", "original_amount", "original_currency", "description"];
 const OPTIONAL_CSV_COLS = ["unique_id", "charged_amount", "identifier", "additional_info", "charged_date", "cash_flow_type"];
 const ALL_CSV_COLS = [...REQUIRED_CSV_COLS, ...OPTIONAL_CSV_COLS];
+// Optional columns the preview table always shows so users can edit them per row even when the CSV omitted them.
+const ALWAYS_SHOW_COLS = new Set([...REQUIRED_CSV_COLS, "cash_flow_type"]);
+
+// Per-column min-width for the editable preview cells. Tuned so the table can shrink
+// below ~1100px without inputs collapsing. Narrow cells (currencies, cash_flow_type)
+// shrink the most; description gets more room.
+const CELL_MIN_WIDTH: Record<string, string> = {
+  account: "min-w-[120px]",
+  activity_date: "min-w-[120px]",
+  charged_currency: "min-w-[72px]",
+  original_currency: "min-w-[72px]",
+  original_amount: "min-w-[100px]",
+  charged_amount: "min-w-[100px]",
+  description: "min-w-[160px]",
+  identifier: "min-w-[120px]",
+  additional_info: "min-w-[140px]",
+  charged_date: "min-w-[120px]",
+  cash_flow_type: "min-w-[110px]",
+  unique_id: "min-w-[120px]",
+};
 
 type FixedInputKind = "account" | "currency" | "cash_flow_type" | "date" | "number" | "text";
 
@@ -728,12 +748,33 @@ function CsvImportTab({ meta }: { meta: Meta }) {
     }
   }
 
+  function patchRow(idx: number, col: string, value: string) {
+    setRows((prev) => {
+      if (!prev) return prev;
+      const next = [...prev];
+      const row: CsvRow = { ...next[idx], [col]: value };
+      const flat: Record<string, string> = {};
+      for (const c of ALL_CSV_COLS) {
+        const v = row[c];
+        if (typeof v === "string") flat[c] = v;
+      }
+      row._errors = validateCsvRow(flat, meta.cash_flow_types);
+      row._duplicate = false;
+      next[idx] = row;
+      return next;
+    });
+  }
+
   const numErrors = rows ? rows.filter((r) => r._errors.length > 0).length : 0;
   const numValid = rows ? rows.filter((r) => r._errors.length === 0).length : 0;
   const numDups = rows ? rows.filter((r) => r._duplicate).length : 0;
 
   return (
     <div className="space-y-6">
+      <datalist id="manual-csv-accounts-list">
+        {knownAccounts.map((a) => <option key={a} value={a} />)}
+      </datalist>
+
       {/* Schema hint */}
       <div className="rounded-xl border border-cj-border bg-cj-surface/40 p-5 space-y-3 text-sm text-cj-text-muted">
         <p>
@@ -799,7 +840,6 @@ function CsvImportTab({ meta }: { meta: Meta }) {
           mapping={columnMapping}
           currencies={meta.currencies}
           cashFlowTypes={meta.cash_flow_types}
-          knownAccounts={knownAccounts}
           onChange={setColumnMapping}
           onApply={handleApplyMapping}
           onCancel={reset}
@@ -848,7 +888,7 @@ function CsvImportTab({ meta }: { meta: Meta }) {
 
           {numErrors > 0 && (
             <div className="rounded-lg bg-red-900/20 border border-red-800 px-4 py-3 text-cj-negative text-sm">
-              {numErrors} row{numErrors !== 1 ? "s have" : " has"} validation errors (shown in red). Fix the CSV and re-upload.
+              {numErrors} row{numErrors !== 1 ? "s have" : " has"} validation errors (shown in red). Edit cells below to fix, or re-upload.
             </div>
           )}
           {numDups > 0 && (
@@ -858,11 +898,11 @@ function CsvImportTab({ meta }: { meta: Meta }) {
           )}
 
           <div className="rounded-xl border border-cj-border overflow-x-auto">
-            <table className="text-xs w-full min-w-[700px]">
+            <table className="text-xs w-full">
               <thead>
                 <tr className="border-b border-cj-border bg-cj-surface">
                   <th className="px-3 py-2.5 text-left text-cj-text-muted font-medium w-6">#</th>
-                  {ALL_CSV_COLS.filter((c) => rows.some((r) => r[c] !== undefined)).map((col) => (
+                  {ALL_CSV_COLS.filter((c) => ALWAYS_SHOW_COLS.has(c) || rows.some((r) => r[c] !== undefined)).map((col) => (
                     <th key={col} className="px-3 py-2.5 text-left text-cj-text-muted font-medium whitespace-nowrap">
                       {col}
                       {REQUIRED_CSV_COLS.includes(col) && <span className="text-cj-negative ml-0.5">*</span>}
@@ -883,14 +923,24 @@ function CsvImportTab({ meta }: { meta: Meta }) {
                     ? "bg-cj-surface/20"
                     : "";
                   return (
-                    <tr key={i} className={`border-b border-cj-border/40 ${rowCls}`}>
-                      <td className="px-3 py-2 text-cj-text-faint">{i + 1}</td>
-                      {ALL_CSV_COLS.filter((c) => rows.some((r) => r[c] !== undefined)).map((col) => (
-                        <td key={col} className="px-3 py-2 text-cj-text-2 max-w-[160px] truncate">
-                          {row[col] as string ?? ""}
+                    <tr key={i} data-testid={`preview-row-${i}`} className={`border-b border-cj-border/40 ${rowCls}`}>
+                      <td className="px-3 py-2 text-cj-text-faint align-top">{i + 1}</td>
+                      {ALL_CSV_COLS.filter((c) => ALWAYS_SHOW_COLS.has(c) || rows.some((r) => r[c] !== undefined)).map((col) => (
+                        <td
+                          key={col}
+                          data-testid={`preview-cell-${col}`}
+                          className={`px-2 py-1.5 align-top ${CELL_MIN_WIDTH[col] ?? "min-w-[100px]"}`}
+                        >
+                          <EditableCell
+                            target={col}
+                            value={(row[col] as string) ?? ""}
+                            currencies={meta.currencies}
+                            cashFlowTypes={meta.cash_flow_types}
+                            onChange={(v) => patchRow(i, col, v)}
+                          />
                         </td>
                       ))}
-                      <td className="px-3 py-2 text-cj-negative">
+                      <td className="px-3 py-2 text-cj-negative align-top">
                         {row._errors.join("; ") || (isDup ? "⚠ duplicate" : "")}
                       </td>
                     </tr>
@@ -929,7 +979,6 @@ function ColumnMapper({
   mapping,
   currencies,
   cashFlowTypes,
-  knownAccounts,
   onChange,
   onApply,
   onCancel,
@@ -939,7 +988,6 @@ function ColumnMapper({
   mapping: Mapping;
   currencies: string[];
   cashFlowTypes: string[];
-  knownAccounts: string[];
   onChange: (m: Mapping) => void;
   onApply: () => void;
   onCancel: () => void;
@@ -970,10 +1018,6 @@ function ColumnMapper({
 
   return (
     <div className="rounded-xl border border-cj-warning/40 bg-cj-warning/5 space-y-0 overflow-hidden">
-      <datalist id="manual-csv-accounts-list">
-        {knownAccounts.map((a) => <option key={a} value={a} />)}
-      </datalist>
-
       {/* Header */}
       <div className="px-5 py-4 border-b border-cj-warning/30 flex items-start justify-between gap-4">
         <div>
@@ -1173,6 +1217,86 @@ function FixedValueInput({
       type="text"
       className={fixedInputCls}
       placeholder={`Value for every row`}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
+
+// ─── EditableCell ─────────────────────────────────────────────────────────────
+
+// Read-only in the preview to avoid surprise: unique_id is auto-generated server-side,
+// and charged_amount falls back to original_amount when empty.
+const READONLY_PREVIEW_COLS = new Set(["unique_id", "charged_amount"]);
+
+const cellInputCls =
+  "w-full bg-cj-elevated/60 border border-cj-border rounded px-2 py-1 text-xs text-cj-text placeholder-cj-text-faint focus:outline-none focus:ring-1 focus:ring-cj-accent focus:border-cj-accent transition-colors";
+
+function EditableCell({
+  target,
+  value,
+  currencies,
+  cashFlowTypes,
+  onChange,
+}: {
+  target: string;
+  value: string;
+  currencies: string[];
+  cashFlowTypes: string[];
+  onChange: (v: string) => void;
+}) {
+  if (READONLY_PREVIEW_COLS.has(target)) {
+    return (
+      <span className="block px-2 py-1 text-cj-text-faint max-w-[160px] truncate">
+        {value || <span className="italic">auto</span>}
+      </span>
+    );
+  }
+
+  const kind: FixedInputKind = FIXED_INPUT_KIND[target] ?? "text";
+
+  if (kind === "currency") {
+    const invalid = !!value && !currencies.includes(value);
+    return (
+      <select
+        className={`${cellInputCls} ${invalid ? "border-cj-negative ring-1 ring-cj-negative/40" : ""}`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {!currencies.includes(value) && <option value={value}>{value || "—"}</option>}
+        {currencies.map((c) => <option key={c} value={c}>{c}</option>)}
+      </select>
+    );
+  }
+  if (kind === "cash_flow_type") {
+    const invalid = !!value && !cashFlowTypes.includes(value);
+    return (
+      <select
+        className={`${cellInputCls} ${invalid ? "border-cj-negative ring-1 ring-cj-negative/40" : ""}`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {!cashFlowTypes.includes(value) && <option value={value}>{value || "—"}</option>}
+        {cashFlowTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+      </select>
+    );
+  }
+  if (kind === "account") {
+    return (
+      <input
+        list="manual-csv-accounts-list"
+        className={cellInputCls}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    );
+  }
+  // dates and numbers stay as text inputs so non-ISO dates and thousand-separated numbers
+  // from the original CSV survive editing without being silently dropped by the browser.
+  return (
+    <input
+      type="text"
+      className={cellInputCls}
       value={value}
       onChange={(e) => onChange(e.target.value)}
     />
