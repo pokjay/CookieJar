@@ -167,8 +167,15 @@ test.describe("Manual Transactions — CSV Import with per-row editing (#41)", (
   // looked like a plain text box. It's now a real <select> of existing accounts
   // with an "+ Other…" escape.
   test("mapper: account fixed-value field renders as a real <select> of existing accounts", async ({ page }) => {
+    // Wait for the known-accounts fetch — the AccountInput dropdown is empty until
+    // this resolves, and selecting "+ Other…" before it does would race the test.
+    const accountsLoaded = page.waitForResponse(
+      (r) => r.url().includes("/api/settings/accounts") && r.status() === 200,
+    );
+
     await page.goto("/manual-transactions");
     await page.getByRole("button", { name: /csv import/i }).click();
+    await accountsLoaded;
 
     // CSV missing the `account` column — forces the column mapper to open.
     const noAccountCsv = [
@@ -189,19 +196,24 @@ test.describe("Manual Transactions — CSV Import with per-row editing (#41)", (
       .filter({ has: page.locator("span", { hasText: /^account$/ }) });
     await accountRow.locator("select").first().selectOption({ value: "__fixed__" });
 
-    // The second <select> in the row is the AccountInput's dropdown.
+    // The second <select> in the row is the AccountInput's dropdown — wait for it
+    // to actually render before reading its options.
     const fixedAccountSelect = accountRow.locator("select").nth(1);
+    await expect(fixedAccountSelect).toBeVisible();
 
-    // It must be a <select>, not a text input.
-    await expect(fixedAccountSelect).toHaveJSProperty("tagName", "SELECT");
+    // The "+ Other…" escape option is always present (doesn't depend on the API).
+    await expect(fixedAccountSelect.locator("option[value='__other__']")).toHaveCount(1);
 
-    // Options must include the "+ Other…" escape and at least one account
-    // pulled from /api/settings/accounts (the seeded DB has several).
-    const optionValues = await fixedAccountSelect.evaluate((el) =>
-      Array.from((el as HTMLSelectElement).options).map((o) => o.value)
-    );
-    expect(optionValues).toContain("__other__");
-    expect(optionValues.filter((v) => v !== "" && v !== "__other__").length).toBeGreaterThan(0);
+    // And at least one account option pulled from /api/settings/accounts must appear.
+    // Polled so a slow CI fetch doesn't race the assertion.
+    await expect
+      .poll(
+        async () =>
+          fixedAccountSelect
+            .locator("option:not([value='']):not([value='__other__'])")
+            .count(),
+      )
+      .toBeGreaterThan(0);
 
     // Picking "+ Other…" should reveal a text input for typing a new account name.
     await fixedAccountSelect.selectOption({ value: "__other__" });
