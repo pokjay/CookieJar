@@ -66,6 +66,13 @@ function cell(page: Page, rowIdx: number, col: string): Locator {
   return row(page, rowIdx).getByTestId(`preview-cell-${col}`).locator("input, select").first();
 }
 
+// Tests in this file share the moneyman.transactions_manual table — they all
+// insert/clean up rows whose account starts with ACCOUNT. With Playwright's
+// default parallelism they'd race (one test's beforeEach cleanup wipes another
+// test's just-inserted rows mid-import), so force serial execution inside this
+// file. Other spec files keep their parallelism via the project-level config.
+test.describe.configure({ mode: "serial" });
+
 test.describe("Manual Transactions — CSV Import with per-row editing (#41)", () => {
   test.beforeEach(cleanupAccount);
   test.afterEach(cleanupAccount);
@@ -91,7 +98,9 @@ test.describe("Manual Transactions — CSV Import with per-row editing (#41)", (
     // Override row 0's description inline (proves another text-cell type works).
     await cell(page, 0, "description").fill("E2E salary deposit EDITED");
 
-    // Account combobox edit on row 1 — proves the datalist combobox works in the preview.
+    // Account edit on row 1 — the row's CSV-provided account isn't in the known list,
+    // so the AccountInput starts in "Other" mode (text input). Typing a new value
+    // proves the inline text-input path lands in the DB.
     await cell(page, 1, "account").fill(`${ACCOUNT}-alt`);
 
     // All rows valid; import enabled.
@@ -159,5 +168,63 @@ test.describe("Manual Transactions — CSV Import with per-row editing (#41)", (
     await row1Amount.fill("123.45");
     await expect(page.getByText("All valid")).toBeVisible();
     await expect(page.getByRole("button", { name: /Import 3 transactions?/i })).toBeEnabled();
+  });
+
+  // Issue #45: the account fixed-value input used to be a datalist combobox that
+  // looked like a plain text box. It's now a real <select> of existing accounts
+  // with an "+ Other…" escape.
+  test("mapper: account fixed-value field renders as a real <select> of existing accounts", async ({ page }) => {
+    // Wait for the known-accounts fetch — the AccountInput dropdown is empty until
+    // this resolves, and selecting "+ Other…" before it does would race the test.
+    const accountsLoaded = page.waitForResponse(
+      (r) => r.url().includes("/api/settings/accounts") && r.status() === 200,
+    );
+
+    await page.goto("/manual-transactions");
+    await page.getByRole("button", { name: /csv import/i }).click();
+    await accountsLoaded;
+
+    // CSV missing the `account` column — forces the column mapper to open.
+    const noAccountCsv = [
+      "activity_date,charged_currency,original_amount,original_currency,description",
+      "2026-05-10,ILS,100.00,ILS,No-account row",
+    ].join("\n");
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "no-account.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(noAccountCsv),
+    });
+    await expect(page.getByText("Map Your Columns")).toBeVisible();
+
+    // The `account` row in the mapper's field-mapping grid: its first <select>
+    // is the source picker. Switch it to "enter fixed value".
+    const accountRow = page
+      .locator("div.flex.items-start.gap-3")
+      .filter({ has: page.locator("span", { hasText: /^account$/ }) });
+    await accountRow.locator("select").first().selectOption({ value: "__fixed__" });
+
+    // The second <select> in the row is the AccountInput's dropdown — wait for it
+    // to actually render before reading its options.
+    const fixedAccountSelect = accountRow.locator("select").nth(1);
+    await expect(fixedAccountSelect).toBeVisible();
+
+    // The "+ Other…" escape option is always present (doesn't depend on the API).
+    await expect(fixedAccountSelect.locator("option[value='__other__']")).toHaveCount(1);
+
+    // And at least one account option pulled from /api/settings/accounts must appear.
+    // Polled so a slow CI fetch doesn't race the assertion.
+    await expect
+      .poll(
+        async () =>
+          fixedAccountSelect
+            .locator("option:not([value='']):not([value='__other__'])")
+            .count(),
+      )
+      .toBeGreaterThan(0);
+
+    // Picking "+ Other…" should reveal a text input for typing a new account name.
+    await fixedAccountSelect.selectOption({ value: "__other__" });
+    const otherInput = accountRow.locator("input[placeholder='New account name']");
+    await expect(otherInput).toBeVisible();
   });
 });
