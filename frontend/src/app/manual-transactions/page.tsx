@@ -61,6 +61,24 @@ const ALL_CSV_COLS = [...REQUIRED_CSV_COLS, ...OPTIONAL_CSV_COLS];
 // Optional columns the preview table always shows so users can edit them per row even when the CSV omitted them.
 const ALWAYS_SHOW_COLS = new Set([...REQUIRED_CSV_COLS, "cash_flow_type"]);
 
+// Per-column min-width for the editable preview cells. Tuned so the table can shrink
+// below ~1100px without inputs collapsing. Narrow cells (currencies, cash_flow_type)
+// shrink the most; description gets more room.
+const CELL_MIN_WIDTH: Record<string, string> = {
+  account: "min-w-[120px]",
+  activity_date: "min-w-[120px]",
+  charged_currency: "min-w-[72px]",
+  original_currency: "min-w-[72px]",
+  original_amount: "min-w-[100px]",
+  charged_amount: "min-w-[100px]",
+  description: "min-w-[160px]",
+  identifier: "min-w-[120px]",
+  additional_info: "min-w-[140px]",
+  charged_date: "min-w-[120px]",
+  cash_flow_type: "min-w-[110px]",
+  unique_id: "min-w-[120px]",
+};
+
 type FixedInputKind = "account" | "currency" | "cash_flow_type" | "date" | "number" | "text";
 
 const FIXED_INPUT_KIND: Record<string, FixedInputKind> = {
@@ -880,7 +898,7 @@ function CsvImportTab({ meta }: { meta: Meta }) {
           )}
 
           <div className="rounded-xl border border-cj-border overflow-x-auto">
-            <table className="text-xs w-full min-w-[1100px]">
+            <table className="text-xs w-full">
               <thead>
                 <tr className="border-b border-cj-border bg-cj-surface">
                   <th className="px-3 py-2.5 text-left text-cj-text-muted font-medium w-6">#</th>
@@ -905,10 +923,14 @@ function CsvImportTab({ meta }: { meta: Meta }) {
                     ? "bg-cj-surface/20"
                     : "";
                   return (
-                    <tr key={i} className={`border-b border-cj-border/40 ${rowCls}`}>
+                    <tr key={i} data-testid={`preview-row-${i}`} className={`border-b border-cj-border/40 ${rowCls}`}>
                       <td className="px-3 py-2 text-cj-text-faint align-top">{i + 1}</td>
                       {ALL_CSV_COLS.filter((c) => ALWAYS_SHOW_COLS.has(c) || rows.some((r) => r[c] !== undefined)).map((col) => (
-                        <td key={col} className="px-2 py-1.5 align-top min-w-[110px]">
+                        <td
+                          key={col}
+                          data-testid={`preview-cell-${col}`}
+                          className={`px-2 py-1.5 align-top ${CELL_MIN_WIDTH[col] ?? "min-w-[100px]"}`}
+                        >
                           <EditableCell
                             target={col}
                             value={(row[col] as string) ?? ""}
@@ -1234,16 +1256,26 @@ function EditableCell({
   const kind: FixedInputKind = FIXED_INPUT_KIND[target] ?? "text";
 
   if (kind === "currency") {
+    const invalid = !!value && !currencies.includes(value);
     return (
-      <select className={cellInputCls} value={value} onChange={(e) => onChange(e.target.value)}>
+      <select
+        className={`${cellInputCls} ${invalid ? "border-cj-negative ring-1 ring-cj-negative/40" : ""}`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
         {!currencies.includes(value) && <option value={value}>{value || "—"}</option>}
         {currencies.map((c) => <option key={c} value={c}>{c}</option>)}
       </select>
     );
   }
   if (kind === "cash_flow_type") {
+    const invalid = !!value && !cashFlowTypes.includes(value);
     return (
-      <select className={cellInputCls} value={value} onChange={(e) => onChange(e.target.value)}>
+      <select
+        className={`${cellInputCls} ${invalid ? "border-cj-negative ring-1 ring-cj-negative/40" : ""}`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
         {!cashFlowTypes.includes(value) && <option value={value}>{value || "—"}</option>}
         {cashFlowTypes.map((t) => <option key={t} value={t}>{t}</option>)}
       </select>

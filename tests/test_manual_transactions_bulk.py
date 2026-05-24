@@ -34,6 +34,8 @@ def bulk_endpoint(migrated_db, monkeypatch):
     monkeypatch.setenv("USE_MOCK_DATA", "false")
 
     # Reset the module-level cached engine so it picks up the test DATABASE_URL.
+    # monkeypatch restores _engine to its original value on teardown — important so
+    # later tests don't keep using an engine pointed at the integration DB.
     import src.db.connection as conn_mod
     monkeypatch.setattr(conn_mod, "_engine", None)
 

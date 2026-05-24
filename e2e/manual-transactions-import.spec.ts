@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Locator } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { Client } from "pg";
 
 // Issue #41: the CSV-import preview now lets the user edit cells per row.
@@ -37,7 +37,11 @@ async function withPg<T>(fn: (client: Client) => Promise<T>): Promise<T> {
 
 async function cleanupAccount() {
   await withPg(async (c) => {
-    await c.query("DELETE FROM moneyman.transactions_manual WHERE account = $1", [ACCOUNT]);
+    // LIKE so the row-1 alt-account variant (`${ACCOUNT}-alt`) is also wiped.
+    await c.query(
+      "DELETE FROM moneyman.transactions_manual WHERE account LIKE $1",
+      [`${ACCOUNT}%`]
+    );
   });
 }
 
@@ -51,15 +55,15 @@ async function uploadCsv(page: Page) {
   await expect(page.locator("text=/^\\d+ rows$/")).toBeVisible();
 }
 
-// Locate the cash_flow_type <select> in a given row by finding a select that
-// has 'salary' as one of its options (the currency selects don't).
-function cashFlowSelectForRow(page: Page, rowIdx: number): Locator {
-  return page
-    .locator("table tbody tr")
-    .nth(rowIdx)
-    .locator("select")
-    .filter({ has: page.locator("option", { hasText: "salary" }) })
-    .first();
+// Each preview row has data-testid="preview-row-<i>" and each editable cell has
+// data-testid="preview-cell-<col>" — use those instead of column-index math so
+// the test doesn't silently target the wrong cell when the column set changes.
+function row(page: Page, rowIdx: number): Locator {
+  return page.getByTestId(`preview-row-${rowIdx}`);
+}
+
+function cell(page: Page, rowIdx: number, col: string): Locator {
+  return row(page, rowIdx).getByTestId(`preview-cell-${col}`).locator("input, select").first();
 }
 
 test.describe("Manual Transactions — CSV Import with per-row editing (#41)", () => {
@@ -74,22 +78,21 @@ test.describe("Manual Transactions — CSV Import with per-row editing (#41)", (
 
     // No mapping needed: the CSV has every required column.
     await expect(page.getByText("Map Your Columns")).not.toBeVisible();
-    await expect(page.locator("table tbody tr")).toHaveCount(3);
+    await expect(page.locator("[data-testid^='preview-row-']")).toHaveCount(3);
 
     // Per-row cash_flow_type edits — the central use case of #41.
-    await cashFlowSelectForRow(page, 0).selectOption("salary");
-    await cashFlowSelectForRow(page, 1).selectOption("expense");
-    await cashFlowSelectForRow(page, 2).selectOption("savings");
+    await cell(page, 0, "cash_flow_type").selectOption("salary");
+    await cell(page, 1, "cash_flow_type").selectOption("expense");
+    await cell(page, 2, "cash_flow_type").selectOption("savings");
 
     // Override row 2's amount inline (proves text-cell editing flows through).
-    const row2 = page.locator("table tbody tr").nth(2);
-    const row2Amount = row2.locator("input, select").nth(3); // 4th control: original_amount
-    await row2Amount.fill("1999.99");
+    await cell(page, 2, "original_amount").fill("1999.99");
 
     // Override row 0's description inline (proves another text-cell type works).
-    const row0 = page.locator("table tbody tr").nth(0);
-    const row0Desc = row0.locator("input, select").nth(5); // 6th control: description
-    await row0Desc.fill("E2E salary deposit EDITED");
+    await cell(page, 0, "description").fill("E2E salary deposit EDITED");
+
+    // Account combobox edit on row 1 — proves the datalist combobox works in the preview.
+    await cell(page, 1, "account").fill(`${ACCOUNT}-alt`);
 
     // All rows valid; import enabled.
     await expect(page.getByText("All valid")).toBeVisible();
@@ -111,9 +114,9 @@ test.describe("Manual Transactions — CSV Import with per-row editing (#41)", (
         `SELECT account, activity_date, original_amount,
                 description, cash_flow_type::text AS cash_flow_type
          FROM moneyman.transactions_manual
-         WHERE account = $1
+         WHERE account LIKE $1
          ORDER BY activity_date`,
-        [ACCOUNT]
+        [`${ACCOUNT}%`]
       );
       return result.rows;
     });
@@ -128,7 +131,7 @@ test.describe("Manual Transactions — CSV Import with per-row editing (#41)", (
     expect(Number(rows[0].original_amount)).toBeCloseTo(5000.0, 2);
 
     expect(rows[1]).toMatchObject({
-      account: ACCOUNT,
+      account: `${ACCOUNT}-alt`,
       description: "E2E coffee shop",
       cash_flow_type: "expense",
     });
@@ -146,8 +149,7 @@ test.describe("Manual Transactions — CSV Import with per-row editing (#41)", (
     await page.getByRole("button", { name: /csv import/i }).click();
     await uploadCsv(page);
 
-    // Blank original_amount on row 1.
-    const row1Amount = page.locator("table tbody tr").nth(1).locator("input, select").nth(3);
+    const row1Amount = cell(page, 1, "original_amount");
     await row1Amount.fill("");
 
     await expect(page.getByText("1 error", { exact: true })).toBeVisible();
