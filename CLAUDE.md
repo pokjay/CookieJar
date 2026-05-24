@@ -47,6 +47,8 @@ uv run ruff check .                   # lint
 uv run ruff format .                  # format
 ```
 
+Before writing new tests (especially anything that hits the DB or drives the UI), read [docs/TESTING.md](docs/TESTING.md) — it covers the integration-test fixture pattern, the e2e parallel-DB-race pitfall, and how to debug CI-only failures.
+
 ### Frontend
 
 ```bash
@@ -74,6 +76,8 @@ make e2e-run      # run Playwright against an already-running stack
 make e2e-down     # stop (preserves node_modules cache volume)
 make e2e-clean    # full teardown including volumes
 ```
+
+E2E specs that touch shared DB state must use `test.describe.configure({ mode: "serial" })` — see [docs/TESTING.md](docs/TESTING.md) for the why and other e2e gotchas.
 
 ---
 
