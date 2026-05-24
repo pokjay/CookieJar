@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.0](https://github.com/pokjay/CookieJar/compare/v0.3.0...v0.4.0) (2026-05-24)
+
+
+### Features
+
+* **manual-transactions:** editable per-row CSV import preview ([#42](https://github.com/pokjay/CookieJar/issues/42)) ([944a622](https://github.com/pokjay/CookieJar/commit/944a62256438622ac1be773eb26ec8c6a5b3177c)), closes [#41](https://github.com/pokjay/CookieJar/issues/41)
+
 ## [0.3.0](https://github.com/pokjay/CookieJar/compare/v0.2.7...v0.3.0) (2026-05-23)
 
 
