@@ -91,7 +91,9 @@ test.describe("Manual Transactions — CSV Import with per-row editing (#41)", (
     // Override row 0's description inline (proves another text-cell type works).
     await cell(page, 0, "description").fill("E2E salary deposit EDITED");
 
-    // Account combobox edit on row 1 — proves the datalist combobox works in the preview.
+    // Account edit on row 1 — the row's CSV-provided account isn't in the known list,
+    // so the AccountInput starts in "Other" mode (text input). Typing a new value
+    // proves the inline text-input path lands in the DB.
     await cell(page, 1, "account").fill(`${ACCOUNT}-alt`);
 
     // All rows valid; import enabled.
@@ -159,5 +161,51 @@ test.describe("Manual Transactions — CSV Import with per-row editing (#41)", (
     await row1Amount.fill("123.45");
     await expect(page.getByText("All valid")).toBeVisible();
     await expect(page.getByRole("button", { name: /Import 3 transactions?/i })).toBeEnabled();
+  });
+
+  // Issue #45: the account fixed-value input used to be a datalist combobox that
+  // looked like a plain text box. It's now a real <select> of existing accounts
+  // with an "+ Other…" escape.
+  test("mapper: account fixed-value field renders as a real <select> of existing accounts", async ({ page }) => {
+    await page.goto("/manual-transactions");
+    await page.getByRole("button", { name: /csv import/i }).click();
+
+    // CSV missing the `account` column — forces the column mapper to open.
+    const noAccountCsv = [
+      "activity_date,charged_currency,original_amount,original_currency,description",
+      "2026-05-10,ILS,100.00,ILS,No-account row",
+    ].join("\n");
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "no-account.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(noAccountCsv),
+    });
+    await expect(page.getByText("Map Your Columns")).toBeVisible();
+
+    // The `account` row in the mapper's field-mapping grid: its first <select>
+    // is the source picker. Switch it to "enter fixed value".
+    const accountRow = page
+      .locator("div.flex.items-start.gap-3")
+      .filter({ has: page.locator("span", { hasText: /^account$/ }) });
+    await accountRow.locator("select").first().selectOption({ value: "__fixed__" });
+
+    // The second <select> in the row is the AccountInput's dropdown.
+    const fixedAccountSelect = accountRow.locator("select").nth(1);
+
+    // It must be a <select>, not a text input.
+    await expect(fixedAccountSelect).toHaveJSProperty("tagName", "SELECT");
+
+    // Options must include the "+ Other…" escape and at least one account
+    // pulled from /api/settings/accounts (the seeded DB has several).
+    const optionValues = await fixedAccountSelect.evaluate((el) =>
+      Array.from((el as HTMLSelectElement).options).map((o) => o.value)
+    );
+    expect(optionValues).toContain("__other__");
+    expect(optionValues.filter((v) => v !== "" && v !== "__other__").length).toBeGreaterThan(0);
+
+    // Picking "+ Other…" should reveal a text input for typing a new account name.
+    await fixedAccountSelect.selectOption({ value: "__other__" });
+    const otherInput = accountRow.locator("input[placeholder='New account name']");
+    await expect(otherInput).toBeVisible();
   });
 });

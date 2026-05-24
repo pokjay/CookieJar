@@ -771,10 +771,6 @@ function CsvImportTab({ meta }: { meta: Meta }) {
 
   return (
     <div className="space-y-6">
-      <datalist id="manual-csv-accounts-list">
-        {knownAccounts.map((a) => <option key={a} value={a} />)}
-      </datalist>
-
       {/* Schema hint */}
       <div className="rounded-xl border border-cj-border bg-cj-surface/40 p-5 space-y-3 text-sm text-cj-text-muted">
         <p>
@@ -840,6 +836,7 @@ function CsvImportTab({ meta }: { meta: Meta }) {
           mapping={columnMapping}
           currencies={meta.currencies}
           cashFlowTypes={meta.cash_flow_types}
+          knownAccounts={knownAccounts}
           onChange={setColumnMapping}
           onApply={handleApplyMapping}
           onCancel={reset}
@@ -936,6 +933,7 @@ function CsvImportTab({ meta }: { meta: Meta }) {
                             value={(row[col] as string) ?? ""}
                             currencies={meta.currencies}
                             cashFlowTypes={meta.cash_flow_types}
+                            knownAccounts={knownAccounts}
                             onChange={(v) => patchRow(i, col, v)}
                           />
                         </td>
@@ -979,6 +977,7 @@ function ColumnMapper({
   mapping,
   currencies,
   cashFlowTypes,
+  knownAccounts,
   onChange,
   onApply,
   onCancel,
@@ -988,6 +987,7 @@ function ColumnMapper({
   mapping: Mapping;
   currencies: string[];
   cashFlowTypes: string[];
+  knownAccounts: string[];
   onChange: (m: Mapping) => void;
   onApply: () => void;
   onCancel: () => void;
@@ -1108,6 +1108,7 @@ function ColumnMapper({
                       value={entry.value}
                       currencies={currencies}
                       cashFlowTypes={cashFlowTypes}
+                      knownAccounts={knownAccounts}
                       onChange={(v) => onFixedValueChange(target, v)}
                     />
                   )}
@@ -1153,12 +1154,14 @@ function FixedValueInput({
   value,
   currencies,
   cashFlowTypes,
+  knownAccounts,
   onChange,
 }: {
   target: string;
   value: string;
   currencies: string[];
   cashFlowTypes: string[];
+  knownAccounts: string[];
   onChange: (v: string) => void;
 }) {
   const kind: FixedInputKind = FIXED_INPUT_KIND[target] ?? "text";
@@ -1181,12 +1184,11 @@ function FixedValueInput({
   }
   if (kind === "account") {
     return (
-      <input
-        list="manual-csv-accounts-list"
-        className={fixedInputCls}
-        placeholder="Pick an existing account or type a new one"
+      <AccountInput
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        knownAccounts={knownAccounts}
+        onChange={onChange}
+        className={fixedInputCls}
       />
     );
   }
@@ -1237,12 +1239,14 @@ function EditableCell({
   value,
   currencies,
   cashFlowTypes,
+  knownAccounts,
   onChange,
 }: {
   target: string;
   value: string;
   currencies: string[];
   cashFlowTypes: string[];
+  knownAccounts: string[];
   onChange: (v: string) => void;
 }) {
   if (READONLY_PREVIEW_COLS.has(target)) {
@@ -1283,11 +1287,11 @@ function EditableCell({
   }
   if (kind === "account") {
     return (
-      <input
-        list="manual-csv-accounts-list"
-        className={cellInputCls}
+      <AccountInput
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        knownAccounts={knownAccounts}
+        onChange={onChange}
+        className={cellInputCls}
       />
     );
   }
@@ -1300,5 +1304,75 @@ function EditableCell({
       value={value}
       onChange={(e) => onChange(e.target.value)}
     />
+  );
+}
+
+// ─── AccountInput ─────────────────────────────────────────────────────────────
+
+const ACCOUNT_OTHER_SENTINEL = "__other__";
+
+// Real <select> of existing accounts with an "+ Other…" escape that swaps to a
+// text input. Shared by FixedValueInput (mapper) and EditableCell (preview) so
+// both surfaces show an obvious dropdown instead of a datalist-attached text box
+// (the latter looks identical to a plain text input until you click into it).
+function AccountInput({
+  value,
+  knownAccounts,
+  onChange,
+  className,
+}: {
+  value: string;
+  knownAccounts: string[];
+  onChange: (v: string) => void;
+  className: string;
+}) {
+  // Start in "other" mode when the supplied value isn't one of the known accounts
+  // (e.g. a row coming from a CSV that uses an unfamiliar account name). After
+  // mount the mode is driven only by user interaction — the × button or the
+  // "+ Other…" option flip it.
+  const [otherMode, setOtherMode] = useState(
+    () => value !== "" && !knownAccounts.includes(value),
+  );
+
+  if (otherMode) {
+    return (
+      <div className="flex gap-1">
+        <input
+          type="text"
+          autoFocus
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="New account name"
+          className={`${className} flex-1`}
+        />
+        <button
+          type="button"
+          onClick={() => { setOtherMode(false); onChange(""); }}
+          title="Pick from existing accounts"
+          className="px-2 rounded text-cj-text-faint hover:text-cj-text-3 hover:bg-cj-hover text-xs"
+        >
+          ×
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <select
+      value={value}
+      onChange={(e) => {
+        if (e.target.value === ACCOUNT_OTHER_SENTINEL) {
+          setOtherMode(true);
+          onChange("");
+        } else {
+          onChange(e.target.value);
+        }
+      }}
+      className={className}
+    >
+      <option value="">— pick an account —</option>
+      {knownAccounts.map((a) => <option key={a} value={a}>{a}</option>)}
+      <option value={ACCOUNT_OTHER_SENTINEL}>+ Other…</option>
+    </select>
   );
 }
