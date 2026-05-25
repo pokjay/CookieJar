@@ -46,56 +46,102 @@ def get_investment_accounts_with_latest() -> pd.DataFrame:
     """)
 
 
+def forward_fill_account_balances(tracking: pd.DataFrame) -> pd.DataFrame:
+    """Carry each account's last known balance across the union of tracking dates.
+
+    Different accounts often get tracked on different dates (e.g. moneyman scrapes
+    each account whenever it next runs). Summing raw tracking rows by date drops
+    accounts that weren't scraped that day, which appears as dips in the net-worth
+    chart. Forward-filling per account before aggregating avoids that.
+
+    Returns long-form (activity_date, investment_accounts_id, amount) with one row
+    per (date, account) where the account has any tracking record up to that date.
+    """
+    if tracking.empty:
+        return pd.DataFrame(
+            columns=["activity_date", "investment_accounts_id", "amount"]
+        )
+
+    wide = (
+        tracking.pivot_table(
+            index="activity_date",
+            columns="investment_accounts_id",
+            values="amount",
+            aggfunc="last",
+        )
+        .sort_index()
+        .ffill()
+    )
+    long = wide.reset_index().melt(
+        id_vars="activity_date",
+        var_name="investment_accounts_id",
+        value_name="amount",
+    )
+    return long.dropna(subset=["amount"]).reset_index(drop=True)
+
+
 def get_net_worth_over_time() -> pd.DataFrame:
     if is_mock_mode():
         accounts = get_investment_accounts()
         tracking = get_investment_tracking()
-        merged = tracking.merge(
-            accounts[["id", "person", "account_type_category"]],
-            left_on="investment_accounts_id",
-            right_on="id",
-            suffixes=("", "_acc"),
+    else:
+        accounts = run_query("SELECT id, person FROM investment_accounts")
+        tracking = run_query(
+            "SELECT investment_accounts_id, activity_date, amount "
+            "FROM investment_accounts_tracking"
         )
-        result = merged.groupby(["activity_date", "person"])["amount"].sum().reset_index()
-        result.columns = ["activity_date", "person", "total_amount"]
-        return result.sort_values("activity_date")
+        tracking["activity_date"] = pd.to_datetime(tracking["activity_date"])
 
-    return run_query("""
-        SELECT t.activity_date, a.person,
-               SUM(t.amount) AS total_amount
-        FROM investment_accounts_tracking t
-        JOIN investment_accounts a ON t.investment_accounts_id = a.id
-        GROUP BY t.activity_date, a.person
-        ORDER BY t.activity_date
-    """)
+    filled = forward_fill_account_balances(tracking)
+    if filled.empty:
+        return pd.DataFrame(columns=["activity_date", "person", "total_amount"])
+
+    merged = filled.merge(
+        accounts[["id", "person"]],
+        left_on="investment_accounts_id",
+        right_on="id",
+    )
+    result = (
+        merged.groupby(["activity_date", "person"])["amount"]
+        .sum()
+        .reset_index()
+        .rename(columns={"amount": "total_amount"})
+    )
+    return result.sort_values("activity_date").reset_index(drop=True)
 
 
 def get_net_worth_by_category_over_time() -> pd.DataFrame:
     if is_mock_mode():
         accounts = get_investment_accounts()
         tracking = get_investment_tracking()
-        merged = tracking.merge(
-            accounts[["id", "person", "account_type_category"]],
-            left_on="investment_accounts_id",
-            right_on="id",
-            suffixes=("", "_acc"),
+    else:
+        accounts = run_query(
+            "SELECT id, person, account_type_category FROM investment_accounts"
         )
-        result = (
-            merged.groupby(["activity_date", "person", "account_type_category"])["amount"]
-            .sum()
-            .reset_index()
+        tracking = run_query(
+            "SELECT investment_accounts_id, activity_date, amount "
+            "FROM investment_accounts_tracking"
         )
-        result.columns = ["activity_date", "person", "account_type_category", "total_amount"]
-        return result.sort_values("activity_date")
+        tracking["activity_date"] = pd.to_datetime(tracking["activity_date"])
 
-    return run_query("""
-        SELECT t.activity_date, a.person, a.account_type_category,
-               SUM(t.amount) AS total_amount
-        FROM investment_accounts_tracking t
-        JOIN investment_accounts a ON t.investment_accounts_id = a.id
-        GROUP BY t.activity_date, a.person, a.account_type_category
-        ORDER BY t.activity_date
-    """)
+    filled = forward_fill_account_balances(tracking)
+    if filled.empty:
+        return pd.DataFrame(
+            columns=["activity_date", "person", "account_type_category", "total_amount"]
+        )
+
+    merged = filled.merge(
+        accounts[["id", "person", "account_type_category"]],
+        left_on="investment_accounts_id",
+        right_on="id",
+    )
+    result = (
+        merged.groupby(["activity_date", "person", "account_type_category"])["amount"]
+        .sum()
+        .reset_index()
+        .rename(columns={"amount": "total_amount"})
+    )
+    return result.sort_values("activity_date").reset_index(drop=True)
 
 
 def _derive_cash_flow_from_manual(
