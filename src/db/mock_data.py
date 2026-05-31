@@ -258,6 +258,10 @@ def _generate_investment_tracking() -> pd.DataFrame:
         }.get(acc["account_type_category"], 50000)
 
         amount = base * _rng_tracking.uniform(0.7, 1.3)
+        # Spread each account's tracking across days 25-30 so the timeline has
+        # gaps — mirrors how scrapers (e.g. moneyman) update each account on
+        # different days. Every month 3/6/9/12 has ≥30 days.
+        day_offset = 25 + (acc["id"] % 6)
 
         for year in range(2022, 2026):
             for quarter_month in [3, 6, 9, 12]:
@@ -269,7 +273,7 @@ def _generate_investment_tracking() -> pd.DataFrame:
                     {
                         "id": row_id,
                         "investment_accounts_id": acc["id"],
-                        "activity_date": date(year, quarter_month, 28),
+                        "activity_date": date(year, quarter_month, day_offset),
                         "amount": round(amount, 2),
                     }
                 )
