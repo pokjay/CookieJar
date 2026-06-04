@@ -36,16 +36,6 @@ class MappingPayload(BaseModel):
 @router.post("/mapping")
 def create_mapping(payload: MappingPayload) -> dict:
     insert_category_mapping(payload.description, payload.category, payload.subcategory)
-    # Bust the FastAPI TTL caches
     from backend import cache as _cache_mod
-    _cache_mod._cache.pop("get_category_hierarchy", None)
-    _cache_mod._cache.pop("get_uncategorized_descriptions", None)
-    # Also bust the underlying @st.cache_data caches (active even outside Streamlit)
-    from src.db.queries.transactions import get_all_transactions, get_uncategorized_transactions, get_uncategorized_descriptions as _get_uncategorized
-    from src.db.queries.categories import get_all_categories, get_category_hierarchy as _get_hierarchy
-    get_all_transactions.clear()
-    get_uncategorized_transactions.clear()
-    _get_uncategorized.clear()
-    get_all_categories.clear()
-    _get_hierarchy.clear()
+    _cache_mod.clear_all()
     return {"ok": True}
