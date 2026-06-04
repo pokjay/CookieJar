@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [0.4.1](https://github.com/pokjay/CookieJar/compare/v0.4.0...v0.4.1) (2026-06-04)
+
+
+### Bug Fixes
+
+* **manual-transactions:** show real dropdown for account fixed value ([#46](https://github.com/pokjay/CookieJar/issues/46)) ([1a9dc65](https://github.com/pokjay/CookieJar/commit/1a9dc657990573bbc0e80946b7a8c5825da2be27)), closes [#45](https://github.com/pokjay/CookieJar/issues/45)
+* **overview:** forward-fill per-account balances for net-worth charts ([#51](https://github.com/pokjay/CookieJar/issues/51)) ([8884347](https://github.com/pokjay/CookieJar/commit/88843470119a4f92fb57c31b6034de150dccad84))
+
 ## [0.4.0](https://github.com/pokjay/CookieJar/compare/v0.3.0...v0.4.0) (2026-05-24)
 
 
