@@ -58,15 +58,8 @@ def net_worth_over_time(persons: str = Query(...)):
     df = nw[nw["person"].isin(person_list)].copy()
     if df.empty:
         return []
-    pivot = (
-        df.pivot_table(index="activity_date", columns="person", values="total_amount", aggfunc="sum")
-        .sort_index()
-        .ffill()
-    )
-    result = pivot.reset_index().melt(id_vars="activity_date", var_name="person", value_name="total_amount")
-    result = result.dropna(subset=["total_amount"])
-    result["activity_date"] = result["activity_date"].dt.strftime("%Y-%m-%d")
-    return result[["activity_date", "person", "total_amount"]].to_dict(orient="records")
+    df["activity_date"] = df["activity_date"].dt.strftime("%Y-%m-%d")
+    return df[["activity_date", "person", "total_amount"]].to_dict(orient="records")
 
 
 @router.get("/net-worth-by-category")
@@ -78,15 +71,13 @@ def net_worth_by_category(person: str | None = Query(None)):
     df = df.dropna(subset=["category"])
     if df.empty:
         return []
-    # Pivot wide, forward-fill holes, melt back to long format.
-    # aggfunc="sum" collapses multiple persons into one value per date+category.
-    pivot = (
-        df.pivot_table(index="activity_date", columns="category", values="total_amount", aggfunc="sum")
-        .sort_index()
-        .ffill()
+    # Collapse multiple persons into one value per (date, category).
+    result = (
+        df.groupby(["activity_date", "category"])["total_amount"]
+        .sum()
+        .reset_index()
+        .rename(columns={"total_amount": "amount"})
     )
-    result = pivot.reset_index().melt(id_vars="activity_date", var_name="category", value_name="amount")
-    result = result.dropna(subset=["amount"])
     result["activity_date"] = result["activity_date"].dt.strftime("%Y-%m-%d")
     return result[["activity_date", "category", "amount"]].to_dict(orient="records")
 
