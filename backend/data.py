@@ -62,6 +62,11 @@ def forward_fill_account_balances(tracking: pd.DataFrame) -> pd.DataFrame:
             columns=["activity_date", "investment_accounts_id", "amount"]
         )
 
+    sort_cols = ["activity_date", "investment_accounts_id"]
+    if "id" in tracking.columns:
+        sort_cols.append("id")
+    tracking = tracking.sort_values(sort_cols)
+
     wide = (
         tracking.pivot_table(
             index="activity_date",
@@ -87,8 +92,9 @@ def get_net_worth_over_time() -> pd.DataFrame:
     else:
         accounts = run_query("SELECT id, person FROM investment_accounts")
         tracking = run_query(
-            "SELECT investment_accounts_id, activity_date, amount "
-            "FROM investment_accounts_tracking"
+            "SELECT id, investment_accounts_id, activity_date, amount "
+            "FROM investment_accounts_tracking "
+            "ORDER BY activity_date, investment_accounts_id, id"
         )
         tracking["activity_date"] = pd.to_datetime(tracking["activity_date"])
 
@@ -119,8 +125,9 @@ def get_net_worth_by_category_over_time() -> pd.DataFrame:
             "SELECT id, person, account_type_category FROM investment_accounts"
         )
         tracking = run_query(
-            "SELECT investment_accounts_id, activity_date, amount "
-            "FROM investment_accounts_tracking"
+            "SELECT id, investment_accounts_id, activity_date, amount "
+            "FROM investment_accounts_tracking "
+            "ORDER BY activity_date, investment_accounts_id, id"
         )
         tracking["activity_date"] = pd.to_datetime(tracking["activity_date"])
 
