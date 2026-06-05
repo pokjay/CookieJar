@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.0](https://github.com/pokjay/CookieJar/compare/v0.4.1...v0.5.0) (2026-06-05)
+
+
+### Features
+
+* add show_in_transactions toggle to manual entry + CSV import ([#53](https://github.com/pokjay/CookieJar/issues/53)) ([6204238](https://github.com/pokjay/CookieJar/commit/62042380ec8e411b73a03d984b317018491c9c5f)), closes [#48](https://github.com/pokjay/CookieJar/issues/48)
+* **manual-transactions:** support XLS/XLSX import ([#54](https://github.com/pokjay/CookieJar/issues/54)) ([ecfe537](https://github.com/pokjay/CookieJar/commit/ecfe53797d433fc81374f5cf6b5addcb8a981042)), closes [#44](https://github.com/pokjay/CookieJar/issues/44)
+
+
+### Bug Fixes
+
+* remove stale st.cache_data.clear() calls in create_mapping ([#52](https://github.com/pokjay/CookieJar/issues/52)) ([2ad6f5e](https://github.com/pokjay/CookieJar/commit/2ad6f5e63f28e15cd319f9c3ebe13b811242e41f)), closes [#47](https://github.com/pokjay/CookieJar/issues/47)
+
 ## [0.4.1](https://github.com/pokjay/CookieJar/compare/v0.4.0...v0.4.1) (2026-06-04)
 
 
