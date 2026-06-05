@@ -106,10 +106,13 @@ test.describe("Manual Transactions — XLS/XLSX import (#44)", () => {
     await page.getByRole("button", { name: /file import/i }).click();
     await uploadXlsx(page, "e2e-import.xlsx", buffer);
 
-    // Single sheet → no picker. All required columns present → no mapper.
-    await expect(page.getByTestId("sheet-picker")).not.toBeVisible();
-    await expect(page.getByText("Map Your Columns")).not.toBeVisible();
+    // Wait for parsing to finish (preview rendered) before the negative
+    // assertions, so they prove the picker/mapper stay absent *after* parse
+    // rather than passing trivially while the UI is still empty.
     await expect(page.locator("[data-testid^='preview-row-']")).toHaveCount(2);
+    // Single sheet → no picker. All required columns present → no mapper.
+    await expect(page.getByTestId("sheet-picker")).toHaveCount(0);
+    await expect(page.getByText("Map Your Columns")).toHaveCount(0);
 
     await expect(page.getByText("All valid")).toBeVisible();
     const importBtn = page.getByRole("button", { name: /Import 2 transactions?/i });

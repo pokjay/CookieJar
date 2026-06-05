@@ -656,6 +656,9 @@ function applyMapping(
 
 function CsvImportTab({ meta }: { meta: Meta }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Monotonic token so an out-of-order parse (e.g. a slow Excel read finishing
+  // after a newer upload/sheet switch) can't overwrite the current selection.
+  const parseReqRef = useRef(0);
   const [rawRows, setRawRows] = useState<Record<string, string>[] | null>(null);
   const [csvColumns, setCsvColumns] = useState<string[]>([]);
   const [columnMapping, setColumnMapping] = useState<Mapping>({});
@@ -702,7 +705,10 @@ function CsvImportTab({ meta }: { meta: Meta }) {
 
   // Shared post-parse step: CSV and Excel both funnel through here so the
   // required-columns check and column-mapper UX are identical for both formats.
-  function ingestRows(parsed: Record<string, string>[], sourceLabel: string) {
+  // `reqId` is the token captured when this parse began; if a newer parse has
+  // since started, we drop the stale result instead of clobbering current state.
+  function ingestRows(parsed: Record<string, string>[], sourceLabel: string, reqId: number) {
+    if (reqId !== parseReqRef.current) return;
     if (!parsed.length) {
       setParseError(`${sourceLabel} is empty or has no data rows.`);
       return;
@@ -720,15 +726,16 @@ function CsvImportTab({ meta }: { meta: Meta }) {
     }
   }
 
-  async function loadSheet(wb: WorkBook, name: string) {
+  async function loadSheet(wb: WorkBook, name: string, reqId: number) {
     setParseError(null);
-    ingestRows(await sheetToRows(wb, name), `Sheet "${name}"`);
+    ingestRows(await sheetToRows(wb, name), `Sheet "${name}"`, reqId);
   }
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     reset();
+    const reqId = ++parseReqRef.current;
     const name = file.name.toLowerCase();
     const isExcel = name.endsWith(".xlsx") || name.endsWith(".xls");
     const reader = new FileReader();
@@ -737,6 +744,7 @@ function CsvImportTab({ meta }: { meta: Meta }) {
         if (isExcel) {
           const buf = ev.target?.result as ArrayBuffer;
           const wb = await readWorkbook(buf);
+          if (reqId !== parseReqRef.current) return; // superseded by a newer upload
           const names = getSheetNames(wb);
           if (names.length === 0) { setParseError("Workbook has no sheets."); return; }
           if (names.length > 1) {
@@ -746,12 +754,13 @@ function CsvImportTab({ meta }: { meta: Meta }) {
             setSheetNames(names);
             setSelectedSheet(names[0]);
           }
-          await loadSheet(wb, names[0]);
+          await loadSheet(wb, names[0], reqId);
         } else {
           const text = ev.target?.result as string;
-          ingestRows(parseCsv(text), "CSV");
+          ingestRows(parseCsv(text), "CSV", reqId);
         }
       } catch (err) {
+        if (reqId !== parseReqRef.current) return;
         setParseError(`Failed to parse file: ${String(err)}`);
       }
     };
@@ -867,12 +876,13 @@ function CsvImportTab({ meta }: { meta: Meta }) {
             value={selectedSheet}
             onChange={async (e) => {
               const name = e.target.value;
+              const reqId = ++parseReqRef.current;
               setSelectedSheet(name);
               // Clear any prior mapper / preview from the previous sheet before re-parsing.
               setShowMapping(false);
               setRawRows(null);
               setRows(null);
-              if (workbook) await loadSheet(workbook, name);
+              if (workbook) await loadSheet(workbook, name, reqId);
             }}
             className="rounded-md bg-cj-elevated border border-cj-border px-2 py-1 text-cj-text-2"
           >
