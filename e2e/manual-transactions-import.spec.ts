@@ -103,6 +103,10 @@ test.describe("Manual Transactions — CSV Import with per-row editing (#41)", (
     // proves the inline text-input path lands in the DB.
     await cell(page, 1, "account").fill(`${ACCOUNT}-alt`);
 
+    // Issue #48: the CSV omits show_in_transactions, so every row defaults to
+    // checked. Uncheck row 2 to prove the per-row boolean toggle persists.
+    await cell(page, 2, "show_in_transactions").uncheck();
+
     // All rows valid; import enabled.
     await expect(page.getByText("All valid")).toBeVisible();
     const importBtn = page.getByRole("button", { name: /Import 3 transactions?/i });
@@ -119,9 +123,11 @@ test.describe("Manual Transactions — CSV Import with per-row editing (#41)", (
         original_amount: string;
         description: string;
         cash_flow_type: string;
+        show_in_transactions: boolean;
       }>(
         `SELECT account, activity_date, original_amount,
-                description, cash_flow_type::text AS cash_flow_type
+                description, cash_flow_type::text AS cash_flow_type,
+                show_in_transactions
          FROM moneyman.transactions_manual
          WHERE account LIKE $1
          ORDER BY activity_date`,
@@ -136,6 +142,7 @@ test.describe("Manual Transactions — CSV Import with per-row editing (#41)", (
       account: ACCOUNT,
       description: "E2E salary deposit EDITED",
       cash_flow_type: "salary",
+      show_in_transactions: true,
     });
     expect(Number(rows[0].original_amount)).toBeCloseTo(5000.0, 2);
 
@@ -143,12 +150,15 @@ test.describe("Manual Transactions — CSV Import with per-row editing (#41)", (
       account: `${ACCOUNT}-alt`,
       description: "E2E coffee shop",
       cash_flow_type: "expense",
+      show_in_transactions: true,
     });
 
+    // Row 2's checkbox was unchecked above — it must land hidden.
     expect(rows[2]).toMatchObject({
       account: ACCOUNT,
       description: "E2E savings transfer",
       cash_flow_type: "savings",
+      show_in_transactions: false,
     });
     expect(Number(rows[2].original_amount)).toBeCloseTo(1999.99, 2);
   });

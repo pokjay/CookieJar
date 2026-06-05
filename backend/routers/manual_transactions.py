@@ -44,6 +44,7 @@ class SingleTransactionPayload(BaseModel):
     additional_info: str | None = None
     charged_date: date | None = None
     cash_flow_type: str = "expense"
+    show_in_transactions: bool = True
 
     @field_validator("account", "description", mode="before")
     @classmethod
@@ -77,6 +78,7 @@ def create_single(payload: SingleTransactionPayload) -> dict:
         "additional_info": payload.additional_info or None,
         "charged_date": payload.charged_date,
         "cash_flow_type": payload.cash_flow_type,
+        "show_in_transactions": payload.show_in_transactions,
     }
     insert_manual_transaction(row)
     _bust_caches()
@@ -96,6 +98,7 @@ class BulkRow(BaseModel):
     additional_info: str | None = None
     charged_date: str | None = None
     cash_flow_type: str = "expense"
+    show_in_transactions: bool = True
 
 
 class BulkImportPayload(BaseModel):
@@ -135,6 +138,7 @@ def bulk_import(payload: BulkImportPayload) -> dict:
             "additional_info": r.additional_info or None,
             "charged_date": charged_date,
             "cash_flow_type": cft,
+            "show_in_transactions": r.show_in_transactions,
         })
 
     insert_manual_transactions(rows_to_insert)

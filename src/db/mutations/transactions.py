@@ -50,12 +50,14 @@ def insert_manual_transaction(row: dict) -> None:
         INSERT INTO transactions_manual (
             unique_id, account, activity_date, charged_amount, charged_currency,
             original_amount, original_currency, description, identifier,
-            additional_info, charged_date, cash_flow_type, created_at, updated_at
+            additional_info, charged_date, cash_flow_type, show_in_transactions,
+            created_at, updated_at
         )
         SELECT
             :unique_id, :account, :activity_date, :charged_amount, :charged_currency,
             :original_amount, :original_currency, :description, :identifier,
-            :additional_info, :charged_date, :cash_flow_type, now(), now()
+            :additional_info, :charged_date, :cash_flow_type, :show_in_transactions,
+            now(), now()
         WHERE NOT EXISTS (SELECT 1 FROM updated)
         """,
         row,
