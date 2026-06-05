@@ -9,6 +9,8 @@ import {
   bulkImportTransactions,
 } from "@/lib/api";
 import type { ManualTransactionPayload } from "@/lib/types";
+import type { WorkBook } from "xlsx";
+import { readWorkbook, getSheetNames, sheetToRows } from "@/lib/xlsx";
 import { Upload, PlusCircle, AlertTriangle, CheckCircle2, X } from "lucide-react";
 
 // ─── types ────────────────────────────────────────────────────────────────────
@@ -659,6 +661,9 @@ function CsvImportTab({ meta }: { meta: Meta }) {
   const [columnMapping, setColumnMapping] = useState<Mapping>({});
   const [showMapping, setShowMapping] = useState(false);
   const [rows, setRows] = useState<CsvRow[] | null>(null);
+  const [workbook, setWorkbook] = useState<WorkBook | null>(null);
+  const [sheetNames, setSheetNames] = useState<string[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState<string>("");
   const [parseError, setParseError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ ok: boolean; imported: number } | null>(null);
@@ -677,6 +682,9 @@ function CsvImportTab({ meta }: { meta: Meta }) {
     setColumnMapping({});
     setShowMapping(false);
     setRows(null);
+    setWorkbook(null);
+    setSheetNames([]);
+    setSelectedSheet("");
     setParseError(null);
     setImportResult(null);
     setImportError(null);
@@ -692,34 +700,63 @@ function CsvImportTab({ meta }: { meta: Meta }) {
     setRows(validated);
   }
 
+  // Shared post-parse step: CSV and Excel both funnel through here so the
+  // required-columns check and column-mapper UX are identical for both formats.
+  function ingestRows(parsed: Record<string, string>[], sourceLabel: string) {
+    if (!parsed.length) {
+      setParseError(`${sourceLabel} is empty or has no data rows.`);
+      return;
+    }
+    const cols = Object.keys(parsed[0]);
+    const missing = REQUIRED_CSV_COLS.filter((c) => !cols.includes(c));
+    if (missing.length > 0) {
+      // Show column mapper
+      setRawRows(parsed);
+      setCsvColumns(cols);
+      setColumnMapping(autoDetectMapping(cols));
+      setShowMapping(true);
+    } else {
+      validateAndSetRows(parsed);
+    }
+  }
+
+  async function loadSheet(wb: WorkBook, name: string) {
+    setParseError(null);
+    ingestRows(await sheetToRows(wb, name), `Sheet "${name}"`);
+  }
+
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     reset();
+    const name = file.name.toLowerCase();
+    const isExcel = name.endsWith(".xlsx") || name.endsWith(".xls");
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result as string;
+    reader.onload = async (ev) => {
       try {
-        const parsed = parseCsv(text);
-        if (!parsed.length) { setParseError("CSV is empty or has no data rows."); return; }
-
-        const cols = Object.keys(parsed[0]);
-        const missing = REQUIRED_CSV_COLS.filter((c) => !cols.includes(c));
-
-        if (missing.length > 0) {
-          // Show column mapper
-          setRawRows(parsed);
-          setCsvColumns(cols);
-          setColumnMapping(autoDetectMapping(cols));
-          setShowMapping(true);
+        if (isExcel) {
+          const buf = ev.target?.result as ArrayBuffer;
+          const wb = await readWorkbook(buf);
+          const names = getSheetNames(wb);
+          if (names.length === 0) { setParseError("Workbook has no sheets."); return; }
+          if (names.length > 1) {
+            // Multi-sheet: stash the workbook, show the picker, and parse the
+            // first sheet so the preview isn't blank.
+            setWorkbook(wb);
+            setSheetNames(names);
+            setSelectedSheet(names[0]);
+          }
+          await loadSheet(wb, names[0]);
         } else {
-          validateAndSetRows(parsed);
+          const text = ev.target?.result as string;
+          ingestRows(parseCsv(text), "CSV");
         }
       } catch (err) {
-        setParseError(`Failed to parse CSV: ${String(err)}`);
+        setParseError(`Failed to parse file: ${String(err)}`);
       }
     };
-    reader.readAsText(file);
+    if (isExcel) reader.readAsArrayBuffer(file);
+    else reader.readAsText(file);
   }
 
   function handleApplyMapping() {
@@ -809,17 +846,42 @@ function CsvImportTab({ meta }: { meta: Meta }) {
       >
         <Upload size={28} className="text-cj-text-faint" />
         <div className="text-center">
-          <p className="text-cj-text-3 text-sm font-medium">Drop a CSV file here, or click to browse</p>
-          <p className="text-cj-text-faint text-xs mt-1">.csv files only</p>
+          <p className="text-cj-text-3 text-sm font-medium">Drop a CSV or Excel file here, or click to browse</p>
+          <p className="text-cj-text-faint text-xs mt-1">.csv, .xls, .xlsx files</p>
         </div>
         <input
           ref={fileInputRef}
           type="file"
-          accept=".csv"
+          accept=".csv,.xls,.xlsx"
           className="hidden"
           onChange={handleFile}
         />
       </div>
+
+      {/* Sheet picker (multi-sheet workbooks) */}
+      {sheetNames.length > 1 && (
+        <div className="flex items-center gap-3 text-sm">
+          <label className="text-cj-text-muted">Sheet:</label>
+          <select
+            data-testid="sheet-picker"
+            value={selectedSheet}
+            onChange={async (e) => {
+              const name = e.target.value;
+              setSelectedSheet(name);
+              // Clear any prior mapper / preview from the previous sheet before re-parsing.
+              setShowMapping(false);
+              setRawRows(null);
+              setRows(null);
+              if (workbook) await loadSheet(workbook, name);
+            }}
+            className="rounded-md bg-cj-elevated border border-cj-border px-2 py-1 text-cj-text-2"
+          >
+            {sheetNames.map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {parseError && (
         <div className="rounded-lg bg-red-900/20 border border-red-800 px-4 py-3 flex items-start gap-2">
