@@ -33,6 +33,7 @@ interface FormState {
   additional_info: string;
   charged_date: string;
   cash_flow_type: string;
+  show_in_transactions: boolean;
 }
 
 interface CsvRow {
@@ -49,6 +50,7 @@ interface CsvRow {
   additional_info?: string;
   charged_date?: string;
   cash_flow_type?: string;
+  show_in_transactions?: string;
   // validation metadata
   _errors: string[];
   _duplicate: boolean;
@@ -58,10 +60,10 @@ interface CsvRow {
 // ─── constants ────────────────────────────────────────────────────────────────
 
 const REQUIRED_CSV_COLS = ["account", "activity_date", "charged_currency", "original_amount", "original_currency", "description"];
-const OPTIONAL_CSV_COLS = ["unique_id", "charged_amount", "identifier", "additional_info", "charged_date", "cash_flow_type"];
+const OPTIONAL_CSV_COLS = ["unique_id", "charged_amount", "identifier", "additional_info", "charged_date", "cash_flow_type", "show_in_transactions"];
 const ALL_CSV_COLS = [...REQUIRED_CSV_COLS, ...OPTIONAL_CSV_COLS];
 // Optional columns the preview table always shows so users can edit them per row even when the CSV omitted them.
-const ALWAYS_SHOW_COLS = new Set([...REQUIRED_CSV_COLS, "cash_flow_type"]);
+const ALWAYS_SHOW_COLS = new Set([...REQUIRED_CSV_COLS, "cash_flow_type", "show_in_transactions"]);
 
 // Per-column min-width for the editable preview cells. Tuned so the table can shrink
 // below ~1100px without inputs collapsing. Narrow cells (currencies, cash_flow_type)
@@ -78,10 +80,11 @@ const CELL_MIN_WIDTH: Record<string, string> = {
   additional_info: "min-w-[140px]",
   charged_date: "min-w-[120px]",
   cash_flow_type: "min-w-[110px]",
+  show_in_transactions: "min-w-[90px]",
   unique_id: "min-w-[120px]",
 };
 
-type FixedInputKind = "account" | "currency" | "cash_flow_type" | "date" | "number" | "text";
+type FixedInputKind = "account" | "currency" | "cash_flow_type" | "boolean" | "date" | "number" | "text";
 
 const FIXED_INPUT_KIND: Record<string, FixedInputKind> = {
   account: "account",
@@ -92,6 +95,7 @@ const FIXED_INPUT_KIND: Record<string, FixedInputKind> = {
   original_currency: "currency",
   charged_currency: "currency",
   cash_flow_type: "cash_flow_type",
+  show_in_transactions: "boolean",
   description: "text",
   identifier: "text",
   additional_info: "text",
@@ -127,6 +131,7 @@ function emptyForm(meta: Meta): FormState {
     additional_info: "",
     charged_date: "",
     cash_flow_type: meta.cash_flow_types.includes("expense") ? "expense" : (meta.cash_flow_types[0] ?? "expense"),
+    show_in_transactions: true,
   };
 }
 
@@ -188,6 +193,17 @@ function isNumeric(val: string): boolean {
   return val !== "" && !isNaN(Number(stripThousands(val)));
 }
 
+// Parse a CSV boolean cell. Blank/missing => true (the column default). Accepts
+// true/false/1/0 case-insensitively; returns null for anything else so callers
+// can surface a validation error.
+function parseBool(val: string | undefined): boolean | null {
+  const v = (val ?? "").trim().toLowerCase();
+  if (v === "") return true;
+  if (v === "true" || v === "1") return true;
+  if (v === "false" || v === "0") return false;
+  return null;
+}
+
 function validateCsvRow(row: Record<string, string>, cashFlowTypes: string[]): string[] {
   const errs: string[] = [];
   for (const col of REQUIRED_CSV_COLS) {
@@ -199,6 +215,9 @@ function validateCsvRow(row: Record<string, string>, cashFlowTypes: string[]): s
   if (row.charged_amount && !isNumeric(row.charged_amount)) errs.push("charged_amount is not numeric");
   if (row.cash_flow_type && !cashFlowTypes.includes(row.cash_flow_type.trim())) {
     errs.push(`cash_flow_type must be one of: ${cashFlowTypes.join(", ")}`);
+  }
+  if (parseBool(row.show_in_transactions) === null) {
+    errs.push("show_in_transactions must be one of: true, false, 1, 0");
   }
   return errs;
 }
@@ -219,6 +238,7 @@ function rowToPayload(row: CsvRow): ManualTransactionPayload {
     additional_info: row.additional_info || undefined,
     charged_date: row.charged_date || undefined,
     cash_flow_type: row.cash_flow_type || "expense",
+    show_in_transactions: parseBool(row.show_in_transactions) ?? true,
   };
 }
 
@@ -350,6 +370,7 @@ function ManualEntryTab({ meta }: { meta: Meta }) {
       additional_info: form.additional_info.trim() || undefined,
       charged_date: form.charged_date || undefined,
       cash_flow_type: form.cash_flow_type,
+      show_in_transactions: form.show_in_transactions,
     };
 
     try {
@@ -523,6 +544,17 @@ function ManualEntryTab({ meta }: { meta: Meta }) {
                 onChange={(e) => patch({ additional_info: e.target.value })}
               />
             </Field>
+            <Field label="Visibility">
+              <label className="flex items-center gap-2 px-1 py-2 text-sm text-cj-text cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="accent-cj-accent"
+                  checked={form.show_in_transactions}
+                  onChange={(e) => patch({ show_in_transactions: e.target.checked })}
+                />
+                <span>Show in transactions list</span>
+              </label>
+            </Field>
           </div>
         </details>
 
@@ -596,6 +628,7 @@ function PreviewTable({ row }: { row: ManualTransactionPayload }) {
     ["Original Amount", `${row.original_amount} ${row.original_currency}`],
     ["Charged Amount", `${row.charged_amount ?? row.original_amount} ${row.charged_currency}`],
     ["Cash Flow Type", row.cash_flow_type],
+    ...(row.show_in_transactions === false ? [["Visibility", "Hidden from transactions"] as [string, string]] : []),
     ...(row.identifier ? [["Identifier", row.identifier] as [string, string]] : []),
     ...(row.charged_date ? [["Charged Date", row.charged_date] as [string, string]] : []),
     ...(row.additional_info ? [["Additional Info", row.additional_info] as [string, string]] : []),
@@ -1254,6 +1287,19 @@ function FixedValueInput({
       </select>
     );
   }
+  if (kind === "boolean") {
+    return (
+      <label className="flex items-center gap-2 px-1 py-1.5 text-xs text-cj-text">
+        <input
+          type="checkbox"
+          className="accent-cj-accent"
+          checked={parseBool(value) === true}
+          onChange={(e) => onChange(e.target.checked ? "true" : "false")}
+        />
+        <span>{parseBool(value) === false ? "Hidden" : "Shown"}</span>
+      </label>
+    );
+  }
   if (kind === "account") {
     return (
       <AccountInput
@@ -1355,6 +1401,21 @@ function EditableCell({
         {!cashFlowTypes.includes(value) && <option value={value}>{value || "—"}</option>}
         {cashFlowTypes.map((t) => <option key={t} value={t}>{t}</option>)}
       </select>
+    );
+  }
+  if (kind === "boolean") {
+    const invalid = parseBool(value) === null;
+    return (
+      <label
+        className={`flex items-center justify-center gap-1.5 px-2 py-1 rounded ${invalid ? "ring-1 ring-cj-negative/40" : ""}`}
+      >
+        <input
+          type="checkbox"
+          className="accent-cj-accent"
+          checked={parseBool(value) === true}
+          onChange={(e) => onChange(e.target.checked ? "true" : "false")}
+        />
+      </label>
     );
   }
   if (kind === "account") {

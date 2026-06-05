@@ -84,7 +84,8 @@ def _fetch_rows(engine, account: str) -> list[dict]:
     sql = sa.text(
         """
         SELECT account, activity_date, original_amount,
-               description, cash_flow_type::text AS cash_flow_type
+               description, cash_flow_type::text AS cash_flow_type,
+               show_in_transactions
         FROM moneyman.transactions_manual
         WHERE account = :account
         ORDER BY activity_date
@@ -128,6 +129,57 @@ def test_bulk_import_defaults_invalid_cash_flow_type_to_expense(bulk_endpoint, m
     rows = _fetch_rows(migrated_db, account)
     assert len(rows) == 1
     assert rows[0]["cash_flow_type"] == "expense"
+
+
+def test_bulk_import_persists_per_row_show_in_transactions(bulk_endpoint, migrated_db):
+    """Each row's show_in_transactions must be stored as given (issue #48)."""
+    account = "pytest-bulk-show-in-tx"
+    rows_in = [
+        {
+            "account": account,
+            "activity_date": "2026-04-06",
+            "charged_currency": "ILS",
+            "original_amount": 10.0,
+            "original_currency": "ILS",
+            "description": "Visible row",
+            "show_in_transactions": True,
+        },
+        {
+            "account": account,
+            "activity_date": "2026-04-07",
+            "charged_currency": "ILS",
+            "original_amount": 20.0,
+            "original_currency": "ILS",
+            "description": "Hidden row",
+            "show_in_transactions": False,
+        },
+    ]
+    bulk_endpoint(rows_in)
+
+    rows = _fetch_rows(migrated_db, account)
+    by_desc = {r["description"]: r for r in rows}
+    assert by_desc["Visible row"]["show_in_transactions"] is True
+    assert by_desc["Hidden row"]["show_in_transactions"] is False
+
+
+def test_bulk_import_defaults_show_in_transactions_to_true(bulk_endpoint, migrated_db):
+    """Omitting show_in_transactions should default to True (issue #48)."""
+    account = "pytest-bulk-show-default"
+    rows_in = [
+        {
+            "account": account,
+            "activity_date": "2026-04-08",
+            "charged_currency": "ILS",
+            "original_amount": 30.0,
+            "original_currency": "ILS",
+            "description": "Default visibility row",
+        }
+    ]
+    bulk_endpoint(rows_in)
+
+    rows = _fetch_rows(migrated_db, account)
+    assert len(rows) == 1
+    assert rows[0]["show_in_transactions"] is True
 
 
 def test_bulk_import_charged_amount_falls_back_to_original_amount(bulk_endpoint, migrated_db):
