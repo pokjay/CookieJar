@@ -79,7 +79,7 @@ test.describe("Manual Transactions — CSV Import with per-row editing (#41)", (
 
   test("inline edits to each row are persisted to the database on import", async ({ page }) => {
     await page.goto("/manual-transactions");
-    await page.getByRole("button", { name: /csv import/i }).click();
+    await page.getByRole("button", { name: /file import/i }).click();
 
     await uploadCsv(page);
 
@@ -155,7 +155,7 @@ test.describe("Manual Transactions — CSV Import with per-row editing (#41)", (
 
   test("blanking a required cell flags validation and blocks import", async ({ page }) => {
     await page.goto("/manual-transactions");
-    await page.getByRole("button", { name: /csv import/i }).click();
+    await page.getByRole("button", { name: /file import/i }).click();
     await uploadCsv(page);
 
     const row1Amount = cell(page, 1, "original_amount");
@@ -181,7 +181,7 @@ test.describe("Manual Transactions — CSV Import with per-row editing (#41)", (
     );
 
     await page.goto("/manual-transactions");
-    await page.getByRole("button", { name: /csv import/i }).click();
+    await page.getByRole("button", { name: /file import/i }).click();
     await accountsLoaded;
 
     // CSV missing the `account` column — forces the column mapper to open.

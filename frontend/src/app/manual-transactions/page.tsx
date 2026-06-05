@@ -9,6 +9,8 @@ import {
   bulkImportTransactions,
 } from "@/lib/api";
 import type { ManualTransactionPayload } from "@/lib/types";
+import type { WorkBook } from "xlsx";
+import { readWorkbook, getSheetNames, sheetToRows } from "@/lib/xlsx";
 import { Upload, PlusCircle, AlertTriangle, CheckCircle2, X } from "lucide-react";
 
 // ─── types ────────────────────────────────────────────────────────────────────
@@ -273,7 +275,7 @@ export default function ManualTransactionsPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-cj-text">Manual Transactions</h1>
-        <p className="text-cj-text-muted text-sm mt-1">Insert transactions manually or import from a CSV file.</p>
+        <p className="text-cj-text-muted text-sm mt-1">Insert transactions manually or import from a CSV or Excel file.</p>
       </div>
 
       {/* Tabs */}
@@ -290,7 +292,7 @@ export default function ManualTransactionsPage() {
             ].join(" ")}
           >
             {tab === "manual" ? <PlusCircle size={15} /> : <Upload size={15} />}
-            {tab === "manual" ? "Manual Entry" : "CSV Import"}
+            {tab === "manual" ? "Manual Entry" : "File Import"}
           </button>
         ))}
       </div>
@@ -654,11 +656,17 @@ function applyMapping(
 
 function CsvImportTab({ meta }: { meta: Meta }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Monotonic token so an out-of-order parse (e.g. a slow Excel read finishing
+  // after a newer upload/sheet switch) can't overwrite the current selection.
+  const parseReqRef = useRef(0);
   const [rawRows, setRawRows] = useState<Record<string, string>[] | null>(null);
   const [csvColumns, setCsvColumns] = useState<string[]>([]);
   const [columnMapping, setColumnMapping] = useState<Mapping>({});
   const [showMapping, setShowMapping] = useState(false);
   const [rows, setRows] = useState<CsvRow[] | null>(null);
+  const [workbook, setWorkbook] = useState<WorkBook | null>(null);
+  const [sheetNames, setSheetNames] = useState<string[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState<string>("");
   const [parseError, setParseError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ ok: boolean; imported: number } | null>(null);
@@ -677,6 +685,9 @@ function CsvImportTab({ meta }: { meta: Meta }) {
     setColumnMapping({});
     setShowMapping(false);
     setRows(null);
+    setWorkbook(null);
+    setSheetNames([]);
+    setSelectedSheet("");
     setParseError(null);
     setImportResult(null);
     setImportError(null);
@@ -692,34 +703,69 @@ function CsvImportTab({ meta }: { meta: Meta }) {
     setRows(validated);
   }
 
+  // Shared post-parse step: CSV and Excel both funnel through here so the
+  // required-columns check and column-mapper UX are identical for both formats.
+  // `reqId` is the token captured when this parse began; if a newer parse has
+  // since started, we drop the stale result instead of clobbering current state.
+  function ingestRows(parsed: Record<string, string>[], sourceLabel: string, reqId: number) {
+    if (reqId !== parseReqRef.current) return;
+    if (!parsed.length) {
+      setParseError(`${sourceLabel} is empty or has no data rows.`);
+      return;
+    }
+    const cols = Object.keys(parsed[0]);
+    const missing = REQUIRED_CSV_COLS.filter((c) => !cols.includes(c));
+    if (missing.length > 0) {
+      // Show column mapper
+      setRawRows(parsed);
+      setCsvColumns(cols);
+      setColumnMapping(autoDetectMapping(cols));
+      setShowMapping(true);
+    } else {
+      validateAndSetRows(parsed);
+    }
+  }
+
+  async function loadSheet(wb: WorkBook, name: string, reqId: number) {
+    setParseError(null);
+    ingestRows(await sheetToRows(wb, name), `Sheet "${name}"`, reqId);
+  }
+
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     reset();
+    const reqId = ++parseReqRef.current;
+    const name = file.name.toLowerCase();
+    const isExcel = name.endsWith(".xlsx") || name.endsWith(".xls");
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result as string;
+    reader.onload = async (ev) => {
       try {
-        const parsed = parseCsv(text);
-        if (!parsed.length) { setParseError("CSV is empty or has no data rows."); return; }
-
-        const cols = Object.keys(parsed[0]);
-        const missing = REQUIRED_CSV_COLS.filter((c) => !cols.includes(c));
-
-        if (missing.length > 0) {
-          // Show column mapper
-          setRawRows(parsed);
-          setCsvColumns(cols);
-          setColumnMapping(autoDetectMapping(cols));
-          setShowMapping(true);
+        if (isExcel) {
+          const buf = ev.target?.result as ArrayBuffer;
+          const wb = await readWorkbook(buf);
+          if (reqId !== parseReqRef.current) return; // superseded by a newer upload
+          const names = getSheetNames(wb);
+          if (names.length === 0) { setParseError("Workbook has no sheets."); return; }
+          if (names.length > 1) {
+            // Multi-sheet: stash the workbook, show the picker, and parse the
+            // first sheet so the preview isn't blank.
+            setWorkbook(wb);
+            setSheetNames(names);
+            setSelectedSheet(names[0]);
+          }
+          await loadSheet(wb, names[0], reqId);
         } else {
-          validateAndSetRows(parsed);
+          const text = ev.target?.result as string;
+          ingestRows(parseCsv(text), "CSV", reqId);
         }
       } catch (err) {
-        setParseError(`Failed to parse CSV: ${String(err)}`);
+        if (reqId !== parseReqRef.current) return;
+        setParseError(`Failed to parse file: ${String(err)}`);
       }
     };
-    reader.readAsText(file);
+    if (isExcel) reader.readAsArrayBuffer(file);
+    else reader.readAsText(file);
   }
 
   function handleApplyMapping() {
@@ -809,17 +855,43 @@ function CsvImportTab({ meta }: { meta: Meta }) {
       >
         <Upload size={28} className="text-cj-text-faint" />
         <div className="text-center">
-          <p className="text-cj-text-3 text-sm font-medium">Drop a CSV file here, or click to browse</p>
-          <p className="text-cj-text-faint text-xs mt-1">.csv files only</p>
+          <p className="text-cj-text-3 text-sm font-medium">Drop a CSV or Excel file here, or click to browse</p>
+          <p className="text-cj-text-faint text-xs mt-1">.csv, .xls, .xlsx files</p>
         </div>
         <input
           ref={fileInputRef}
           type="file"
-          accept=".csv"
+          accept=".csv,.xls,.xlsx"
           className="hidden"
           onChange={handleFile}
         />
       </div>
+
+      {/* Sheet picker (multi-sheet workbooks) */}
+      {sheetNames.length > 1 && (
+        <div className="flex items-center gap-3 text-sm">
+          <label className="text-cj-text-muted">Sheet:</label>
+          <select
+            data-testid="sheet-picker"
+            value={selectedSheet}
+            onChange={async (e) => {
+              const name = e.target.value;
+              const reqId = ++parseReqRef.current;
+              setSelectedSheet(name);
+              // Clear any prior mapper / preview from the previous sheet before re-parsing.
+              setShowMapping(false);
+              setRawRows(null);
+              setRows(null);
+              if (workbook) await loadSheet(workbook, name, reqId);
+            }}
+            className="rounded-md bg-cj-elevated border border-cj-border px-2 py-1 text-cj-text-2"
+          >
+            {sheetNames.map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {parseError && (
         <div className="rounded-lg bg-red-900/20 border border-red-800 px-4 py-3 flex items-start gap-2">
@@ -1023,7 +1095,7 @@ function ColumnMapper({
         <div>
           <h3 className="text-sm font-semibold text-cj-warning">Map Your Columns</h3>
           <p className="text-cj-warning/70 text-xs mt-0.5">
-            Your CSV columns don&apos;t match the expected format. For each field, map to a CSV column or enter a fixed value that applies to every row.
+            Your file&apos;s columns don&apos;t match the expected format. For each field, map to a column or enter a fixed value that applies to every row.
           </p>
         </div>
         <button onClick={onCancel} className="text-cj-text-faint hover:text-cj-text-3 flex-shrink-0 mt-0.5">
@@ -1034,7 +1106,7 @@ function ColumnMapper({
       {/* Raw data preview */}
       <div className="px-5 py-4 border-b border-cj-warning/20 space-y-2">
         <p className="text-xs font-medium text-cj-text-muted uppercase tracking-wide">
-          Your CSV — first {previewRows.length} rows
+          Your file — first {previewRows.length} rows
         </p>
         <div className="rounded-lg border border-cj-border overflow-x-auto">
           <table className="text-xs w-full min-w-[500px]">
@@ -1094,7 +1166,7 @@ function ColumnMapper({
                   >
                     <option value="">— skip —</option>
                     {csvColumns.length > 0 && (
-                      <optgroup label="Map to CSV column">
+                      <optgroup label="Map to file column">
                         {csvColumns.map((col) => (
                           <option key={col} value={col}>{col}</option>
                         ))}
