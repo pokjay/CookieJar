@@ -275,7 +275,7 @@ export default function ManualTransactionsPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-cj-text">Manual Transactions</h1>
-        <p className="text-cj-text-muted text-sm mt-1">Insert transactions manually or import from a CSV file.</p>
+        <p className="text-cj-text-muted text-sm mt-1">Insert transactions manually or import from a CSV or Excel file.</p>
       </div>
 
       {/* Tabs */}
@@ -292,7 +292,7 @@ export default function ManualTransactionsPage() {
             ].join(" ")}
           >
             {tab === "manual" ? <PlusCircle size={15} /> : <Upload size={15} />}
-            {tab === "manual" ? "Manual Entry" : "CSV Import"}
+            {tab === "manual" ? "Manual Entry" : "File Import"}
           </button>
         ))}
       </div>
@@ -1085,7 +1085,7 @@ function ColumnMapper({
         <div>
           <h3 className="text-sm font-semibold text-cj-warning">Map Your Columns</h3>
           <p className="text-cj-warning/70 text-xs mt-0.5">
-            Your CSV columns don&apos;t match the expected format. For each field, map to a CSV column or enter a fixed value that applies to every row.
+            Your file&apos;s columns don&apos;t match the expected format. For each field, map to a column or enter a fixed value that applies to every row.
           </p>
         </div>
         <button onClick={onCancel} className="text-cj-text-faint hover:text-cj-text-3 flex-shrink-0 mt-0.5">
@@ -1096,7 +1096,7 @@ function ColumnMapper({
       {/* Raw data preview */}
       <div className="px-5 py-4 border-b border-cj-warning/20 space-y-2">
         <p className="text-xs font-medium text-cj-text-muted uppercase tracking-wide">
-          Your CSV — first {previewRows.length} rows
+          Your file — first {previewRows.length} rows
         </p>
         <div className="rounded-lg border border-cj-border overflow-x-auto">
           <table className="text-xs w-full min-w-[500px]">
@@ -1156,7 +1156,7 @@ function ColumnMapper({
                   >
                     <option value="">— skip —</option>
                     {csvColumns.length > 0 && (
-                      <optgroup label="Map to CSV column">
+                      <optgroup label="Map to file column">
                         {csvColumns.map((col) => (
                           <option key={col} value={col}>{col}</option>
                         ))}

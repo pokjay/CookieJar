@@ -103,7 +103,7 @@ test.describe("Manual Transactions — XLS/XLSX import (#44)", () => {
     ]);
 
     await page.goto("/manual-transactions");
-    await page.getByRole("button", { name: /csv import/i }).click();
+    await page.getByRole("button", { name: /file import/i }).click();
     await uploadXlsx(page, "e2e-import.xlsx", buffer);
 
     // Single sheet → no picker. All required columns present → no mapper.
@@ -163,7 +163,7 @@ test.describe("Manual Transactions — XLS/XLSX import (#44)", () => {
     ]);
 
     await page.goto("/manual-transactions");
-    await page.getByRole("button", { name: /csv import/i }).click();
+    await page.getByRole("button", { name: /file import/i }).click();
     await uploadXlsx(page, "multi-sheet.xlsx", buffer);
 
     // Picker appears for a multi-sheet workbook; first sheet is parsed by default.
