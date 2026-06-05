@@ -23,11 +23,13 @@ Chromium — `npx playwright install` is blocked by the network allowlist.
 
 ```bash
 # 1. Start backend (mock data, :8083) + frontend (Next.js dev, :3000).
+#    Must be `source`d — it exports SCREENSHOT_* and defines screenshot_app_stop.
 source .claude/skills/screenshot-app/scripts/serve.sh
 
 # 2. Log in and screenshot any routes (route + output-path pairs).
-PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers /opt/node22/bin/node \
-  .claude/skills/screenshot-app/scripts/screenshot.js \
+#    run.sh + screenshot.js auto-discover node, the Playwright module, and the
+#    pre-installed browser — no image paths are hard-coded in the command.
+.claude/skills/screenshot-app/scripts/run.sh \
   /manual-transactions /tmp/manual.png  /transactions /tmp/txns.png
 
 # 3. View with the Read tool, send with SendUserFile, then stop the servers.
@@ -36,7 +38,7 @@ screenshot_app_stop
 
 Then `Read` the PNGs to confirm they rendered, and `SendUserFile` to share them.
 
-## Why the unusual paths (the two gotchas)
+## Why this is needed (the gotchas)
 
 1. **No Docker.** Run the stack from source instead:
    - Backend: `USE_MOCK_DATA=true uv run uvicorn backend.main:app --port 8083`
@@ -49,19 +51,34 @@ Then `Read` the PNGs to confirm they rendered, and `SendUserFile` to share them.
    - `serve.sh` does all of the above and waits until both are reachable.
 
 2. **Playwright browser CDN is blocked.** `playwright install chromium` fails
-   with `403 Host not in allowlist`. A matching browser is already in the image:
-   - Browsers: `/opt/pw-browsers` (set `PLAYWRIGHT_BROWSERS_PATH` to it)
-   - Global playwright module + node: `/opt/node22/lib/node_modules/playwright`,
-     run with `/opt/node22/bin/node`
-   - Do **not** `require('@playwright/test')` from `e2e/node_modules` — that
-     version expects a browser build the sandbox doesn't have.
-   - `screenshot.js` resolves these automatically.
+   with `403 Host not in allowlist`, so a browser already baked into the image
+   must be reused. `screenshot.js` **auto-discovers** this instead of hard-coding
+   paths (they're image properties and may move):
+   - It finds the browsers dir by scanning known locations
+     (`PLAYWRIGHT_BROWSERS_PATH`, `/opt/pw-browsers`, `~/.cache/ms-playwright`, …)
+     then a bounded `find` for a `chromium-*` build.
+   - It picks a Playwright **module whose expected Chromium revision actually
+     exists on disk** (the `e2e/node_modules` copy often expects a build the
+     sandbox doesn't have — version drift is the usual failure).
+   - Override discovery if needed: `PLAYWRIGHT_BROWSERS_PATH=…`,
+     `SCREENSHOT_PLAYWRIGHT=/path/to/node_modules/playwright`,
+     `SCREENSHOT_NODE=/path/to/node`.
+   - On this image today discovery resolves to `/opt/pw-browsers` +
+     `/opt/node22/lib/node_modules/playwright` — informational only; don't bake
+     these in.
+
+3. **Don't `pkill -f` on a pattern your own shell's command line contains** (e.g.
+   `uvicorn backend.main`) — it matches and kills the controlling shell. The stop
+   helper greps out `$$`/`$PPID`; keep that if you edit it.
 
 ## Auth
 
 next-auth shared-password login. `serve.sh` sets `AUTH_PASSWORD=test` (override
-with `SCREENSHOT_PASSWORD=…` before sourcing). `screenshot.js` logs in by filling
-`[name="password"]`, clicking `[type="submit"]`, and waiting for `/`.
+with `SCREENSHOT_PASSWORD=…` before sourcing). `screenshot.js` fills
+`[name="password"]`, clicks the **Sign in** button, and waits for `/`. The login
+is a client component that runs `signIn()` on submit, so a click before React
+hydrates does a native GET and never navigates — the script waits for hydration
+and retries, so don't "simplify" that away.
 
 ## Interactive flows (expand a section, upload a CSV, toggle a cell)
 
@@ -85,9 +102,14 @@ await page.screenshot({ path: '/tmp/csv.png', fullPage: true });
 
 ## Files
 
-- `scripts/serve.sh` — boots backend + frontend, exports `SCREENSHOT_BASE_URL` /
-  `SCREENSHOT_PASSWORD`, defines `screenshot_app_stop`. **Must be `source`d.**
-- `scripts/screenshot.js` — logs in, screenshots `(route, output)` arg pairs.
+- `scripts/serve.sh` — kills stale instances, boots backend + frontend, exports
+  `SCREENSHOT_BASE_URL` / `SCREENSHOT_PASSWORD`, defines `screenshot_app_stop`.
+  **Must be `source`d.**
+- `scripts/run.sh` — thin wrapper that runs `screenshot.js` under a discovered
+  node. This is the command to call; pass `(route, output)` pairs.
+- `scripts/screenshot.js` — auto-discovers Playwright + browser, logs in, and
+  screenshots `(route, output)` arg pairs. Copy to `/tmp` and extend for
+  interactive flows (see above).
 
 ## Troubleshooting
 
@@ -95,9 +117,14 @@ await page.screenshot({ path: '/tmp/csv.png', fullPage: true });
   `SCREENSHOT_PASSWORD` (serve.sh) and the `screenshot.js` password.
 - **Blank / error page:** backend not up. Check `/tmp/cj-backend.log` and
   `curl http://127.0.0.1:8083/health`.
-- **`browserType.launch: Executable doesn't exist`:** `PLAYWRIGHT_BROWSERS_PATH`
-  isn't `/opt/pw-browsers`, or the global playwright version drifted from the
-  installed browser build — list `/opt/pw-browsers` and use the playwright whose
-  version matches (`cat /opt/node22/lib/node_modules/playwright/package.json`).
+- **`browserType.launch: Executable doesn't exist`:** discovery picked a
+  Playwright module whose Chromium build isn't on disk. `screenshot.js` prints the
+  module + browsers dir it chose — find the installed build and the matching
+  module and pass them explicitly:
+  ```bash
+  find / -maxdepth 6 -type d -name 'chromium-*' 2>/dev/null            # browsers
+  find / -maxdepth 8 -type d -path '*/node_modules/playwright' 2>/dev/null  # modules
+  PLAYWRIGHT_BROWSERS_PATH=<dir> SCREENSHOT_PLAYWRIGHT=<dir> .../run.sh /route /out.png
+  ```
 - **Ports busy:** `screenshot_app_stop`, or override `BACKEND_PORT` /
   `FRONTEND_PORT` before sourcing (also update `NEXTAUTH_URL` expectations).

@@ -16,11 +16,20 @@ export SCREENSHOT_PASSWORD="${SCREENSHOT_PASSWORD:-test}"
 export SCREENSHOT_BASE_URL="http://localhost:${FRONTEND_PORT}"
 
 screenshot_app_stop() {
-  pkill -f "uvicorn backend.main" 2>/dev/null || true
-  pkill -f "next dev" 2>/dev/null || true
-  pkill -f "next-server" 2>/dev/null || true
+  # IMPORTANT: a naive `pkill -f "uvicorn backend.main"` also matches the shell
+  # running this script (its command line contains that string) and kills it.
+  # Match the actual child processes and exclude this shell ($$) and its parent.
+  local pat
+  for pat in "uvicorn backend.main:app" "frontend/node_modules/.bin/next" "next-server"; do
+    pgrep -f "$pat" 2>/dev/null | grep -vx "$$" | grep -vx "${PPID:-0}" | xargs -r kill 2>/dev/null || true
+  done
   echo "stopped backend + frontend"
 }
+
+# Kill any stale instances first so the frontend binds :3000 instead of falling
+# back to :3001 (which would break the NEXTAUTH_URL the cookie is scoped to).
+screenshot_app_stop >/dev/null 2>&1 || true
+sleep 1
 
 echo "→ backend (FastAPI, mock data) on :${BACKEND_PORT}"
 ( cd "$REPO_ROOT" && USE_MOCK_DATA=true uv run uvicorn backend.main:app \
