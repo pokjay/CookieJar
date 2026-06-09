@@ -1,15 +1,7 @@
 import { test, expect } from "@playwright/test";
-
-const EXPECTED = {
-  total:         "₪2,052,529",
-  gomez:         "₪1,113,309",
-  morticia:      "₪939,220",
-  deltaOverall:  "+8.8%",
-  deltaGomez:    "+7.1%",
-  deltaMorticia: "+10.8%",
-  income2025:    "₪63,645",
-  expense2025:   "₪43,003",
-};
+// Derived from the mock data generators — regenerate after mock-data changes:
+//   USE_MOCK_DATA=true uv run python scripts/generate_e2e_fixtures.py
+import EXPECTED from "./fixtures/expected-overview.json";
 
 test.describe("Overview page", () => {
   test.beforeEach(async ({ page }) => {
@@ -18,25 +10,19 @@ test.describe("Overview page", () => {
   });
 
   test.describe("Metrics", () => {
-    test("total net worth shows ₪2,052,529", async ({ page }) => {
+    test("total net worth matches mock data", async ({ page }) => {
       await expect(page.getByTestId("metric-total-value")).toHaveText(EXPECTED.total);
     });
 
-    test("Gomez card shows ₪1,113,309", async ({ page }) => {
-      await expect(page.getByTestId("metric-Gomez-value")).toHaveText(EXPECTED.gomez);
-    });
-
-    test("Morticia card shows ₪939,220", async ({ page }) => {
-      await expect(page.getByTestId("metric-Morticia-value")).toHaveText(EXPECTED.morticia);
+    test("per-person cards match mock data", async ({ page }) => {
+      for (const [person, amount] of Object.entries(EXPECTED.byPerson)) {
+        await expect(page.getByTestId(`metric-${person}-value`)).toHaveText(amount);
+      }
     });
 
     test("YoY delta badges are green and show correct %", async ({ page }) => {
-      const cases = [
-        ["delta-Overall", EXPECTED.deltaOverall],
-        ["delta-Gomez", EXPECTED.deltaGomez],
-        ["delta-Morticia", EXPECTED.deltaMorticia],
-      ] as const;
-      for (const [testid, value] of cases) {
+      for (const [person, value] of Object.entries(EXPECTED.delta)) {
+        const testid = `delta-${person}`;
         const badge = page.getByTestId(testid).locator("span").first();
         await expect(badge).toContainText(value);
         await expect(badge).toHaveClass(/text-cj-positive/);
@@ -57,26 +43,26 @@ test.describe("Overview page", () => {
       ).toBeVisible();
     });
 
-    test("income bar shows ₪63,645 and expense bar shows ₪43,003", async ({ page }) => {
+    test("income and expense bars match mock data", async ({ page }) => {
       const chartBars = page.getByTestId("chart-bars");
       const bars = chartBars.locator(".recharts-bar-rectangle");
 
       await bars.first().hover();
-      await expect(chartBars.locator(".recharts-tooltip-wrapper")).toContainText(EXPECTED.income2025);
+      await expect(chartBars.locator(".recharts-tooltip-wrapper")).toContainText(EXPECTED.avgMonthlyIncome);
 
       await bars.nth(1).hover();
-      await expect(chartBars.locator(".recharts-tooltip-wrapper")).toContainText(EXPECTED.expense2025);
+      await expect(chartBars.locator(".recharts-tooltip-wrapper")).toContainText(EXPECTED.avgMonthlyExpense);
     });
   });
 
   test.describe("Year selector", () => {
-    test("defaults to 2025", async ({ page }) => {
-      await expect(page.getByTestId("year-selector")).toHaveValue("2025");
+    test("defaults to the latest mock-data year", async ({ page }) => {
+      await expect(page.getByTestId("year-selector")).toHaveValue(EXPECTED.currentYear);
     });
 
-    test("available options include 2022, 2023, 2024, 2025", async ({ page }) => {
+    test("available options cover all mock-data years", async ({ page }) => {
       const selector = page.getByTestId("year-selector");
-      for (const year of ["2022", "2023", "2024", "2025"]) {
+      for (const year of EXPECTED.availableYears) {
         await expect(selector.locator(`option[value="${year}"]`)).toBeAttached();
       }
     });
@@ -110,21 +96,21 @@ test.describe("Overview page", () => {
       await expect(page.getByTestId("cashflow-table-Household")).toBeVisible();
     });
 
-    test("year rows present for 2022–2025", async ({ page }) => {
-      for (const year of [2022, 2023, 2024, 2025]) {
+    test("year rows present for all mock-data years", async ({ page }) => {
+      for (const year of EXPECTED.availableYears) {
         await expect(page.getByTestId(`cashflow-year-${year}`)).toBeVisible();
       }
     });
 
     test("clicking a year row expands to show monthly rows", async ({ page }) => {
-      await page.getByTestId("cashflow-year-2025").click();
+      await page.getByTestId(`cashflow-year-${EXPECTED.currentYear}`).click();
       await expect(page.locator('[data-testid="cashflow-month-row"]').first()).toBeVisible();
     });
 
     test("clicking again collapses monthly rows", async ({ page }) => {
-      await page.getByTestId("cashflow-year-2025").click();
+      await page.getByTestId(`cashflow-year-${EXPECTED.currentYear}`).click();
       await expect(page.locator('[data-testid="cashflow-month-row"]').first()).toBeVisible();
-      await page.getByTestId("cashflow-year-2025").click();
+      await page.getByTestId(`cashflow-year-${EXPECTED.currentYear}`).click();
       await expect(page.locator('[data-testid="cashflow-month-row"]').first()).not.toBeVisible();
     });
 
