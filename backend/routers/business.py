@@ -71,8 +71,7 @@ def create_mappings(payload: MappingsPayload) -> dict:
 
 
 def _bust_caches() -> None:
+    # Business mappings ripple into transaction views, so evict everything
+    # rather than tracking individual dependent caches.
     from backend import cache as _cache_mod
-    _cache_mod._cache.pop("get_all_business_descriptions", None)
-    _cache_mod._cache.pop("get_unmapped_business_descriptions", None)
-    get_all_business_descriptions.clear()
-    get_unmapped_business_descriptions.clear()
+    _cache_mod.clear_all()
