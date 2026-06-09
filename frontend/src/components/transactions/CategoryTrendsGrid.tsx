@@ -11,12 +11,11 @@ import {
 import { formatCurrency, formatCurrencyFull } from "@/lib/formatting";
 import type { TxnCategoryTrend } from "@/lib/types";
 import { useThemeColors } from "@/lib/use-theme-colors";
+import { MONTH_ORDER } from "@/lib/constants";
 
 interface Props {
   data: TxnCategoryTrend[];
 }
-
-const MONTH_ORDER = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 function MiniLineChart({
   category,
