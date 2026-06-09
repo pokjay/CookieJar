@@ -1,5 +1,6 @@
 """FastAPI backend."""
 
+import hmac
 import os
 
 import uvicorn
@@ -19,13 +20,18 @@ from backend.routers.travel import router as travel_router
 
 app = FastAPI(title="Family Money Tracker API")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# The frontend talks to the backend server-side (Next.js proxy), so browsers
+# never need cross-origin access. Only enable CORS for origins explicitly
+# allowed via CORS_ALLOW_ORIGINS (comma-separated).
+_cors_origins = [o.strip() for o in os.getenv("CORS_ALLOW_ORIGINS", "").split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 _API_SECRET = os.getenv("API_SECRET")
 
@@ -33,7 +39,8 @@ _API_SECRET = os.getenv("API_SECRET")
 @app.middleware("http")
 async def require_api_secret(request: Request, call_next):
     if _API_SECRET and request.url.path != "/health":
-        if request.headers.get("X-API-Secret") != _API_SECRET:
+        provided = request.headers.get("X-API-Secret") or ""
+        if not hmac.compare_digest(provided, _API_SECRET):
             return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
     return await call_next(request)
 
