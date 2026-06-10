@@ -27,15 +27,21 @@ export default function CashFlowTable({
       requestedYear.current = null;
       setExpandedYear(null);
       setMonthlyData([]);
+      setLoading(false);
       return;
     }
     requestedYear.current = year;
     setLoading(true);
     setExpandedYear(year);
-    const data = await onExpandYear(year);
-    if (requestedYear.current !== year) return;
-    setMonthlyData(data);
-    setLoading(false);
+    try {
+      const data = await onExpandYear(year);
+      if (requestedYear.current !== year) return;
+      setMonthlyData(data);
+    } finally {
+      // Only the still-active request may clear the spinner — a stale fetch
+      // resolving after a collapse or year switch must not touch it.
+      if (requestedYear.current === year) setLoading(false);
+    }
   }
 
   const cellClass = "px-4 py-2.5 text-sm";
