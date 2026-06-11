@@ -52,9 +52,10 @@ export default function NetWorthPieChart({ data }: NetWorthPieChartProps) {
   function renderLabel({
     cx, cy, midAngle, outerRadius, name, value, fill,
   }: {
-    cx: number; cy: number; midAngle: number; outerRadius: number;
-    name: string; value: number; fill: string;
+    cx?: number; cy?: number; midAngle?: number; outerRadius?: number;
+    name?: string; value?: number; fill?: string;
   }) {
+    if (cx === undefined || cy === undefined || midAngle === undefined || outerRadius === undefined || value === undefined) return null;
     const radius = outerRadius + 44;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
