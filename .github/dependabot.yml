@@ -18,3 +18,18 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
+      # ESLint 10 blocked: eslint-config-next only supports ^7-9. Re-evaluate at v11.
+      - dependency-name: "eslint"
+        versions: [">= 10, < 11"]
+      # Tailwind 4 blocked: requires CSS migration (@tailwind → @import). Re-evaluate at v5.
+      - dependency-name: "tailwindcss"
+        versions: [">= 4, < 5"]
+      # React 19 blocked: @tremor/react@3 only supports react@^18. Re-evaluate at v20.
+      - dependency-name: "react"
+        versions: [">= 19, < 20"]
+      - dependency-name: "react-dom"
+        versions: [">= 19, < 20"]
+      - dependency-name: "@types/react"
+        versions: [">= 19, < 20"]
+      - dependency-name: "@types/react-dom"
+        versions: [">= 19, < 20"]
