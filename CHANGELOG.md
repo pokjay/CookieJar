@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.1](https://github.com/pokjay/CookieJar/compare/v0.5.0...v0.5.1) (2026-06-11)
+
+
+### Bug Fixes
+
+* code-review fixes — cash-flow consolidation, cache busting, auth hardening, router tests ([#59](https://github.com/pokjay/CookieJar/issues/59)) ([0522a51](https://github.com/pokjay/CookieJar/commit/0522a51fe0e5fd04c9825acd45c81323186cd7f7))
+
 ## [0.5.0](https://github.com/pokjay/CookieJar/compare/v0.4.1...v0.5.0) (2026-06-05)
 
 
