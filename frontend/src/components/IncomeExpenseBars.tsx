@@ -73,7 +73,7 @@ export default function IncomeExpenseBars({
             <LabelList
               dataKey="value"
               position="top"
-              formatter={(v: number) => formatCurrency(v)}
+              formatter={(v: unknown) => formatCurrency(Number(v))}
               style={{ fill: colors.label, fontSize: 12 }}
             />
           </Bar>
