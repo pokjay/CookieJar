@@ -16,7 +16,7 @@ dependencies = [
 dev = [
     "ruff>=0.8.0",
     "ipdb>=0.13.13",
-    "pytest>=9.0.2",
+    "pytest>=9.0.3",
 ]
 
 [tool.pytest.ini_options]
