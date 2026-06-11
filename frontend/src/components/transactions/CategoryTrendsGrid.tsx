@@ -54,7 +54,7 @@ function MiniLineChart({
           />
           <YAxis hide domain={[0, maxSpend * 1.1 || 100]} />
           <Tooltip
-            formatter={(v: number) => formatCurrencyFull(v)}
+            formatter={(v: unknown) => formatCurrencyFull(Number(v))}
             contentStyle={{
               background: "#1F2937",
               border: `1px solid ${colors.cursor}`,
