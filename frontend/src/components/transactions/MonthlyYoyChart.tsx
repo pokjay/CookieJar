@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import {
   BarChart,
   Bar,
@@ -12,6 +13,7 @@ import {
 import { formatCurrency, formatCurrencyFull } from "@/lib/formatting";
 import type { TxnMonthlyYoy } from "@/lib/types";
 import { useThemeColors } from "@/lib/use-theme-colors";
+import { MONTH_ORDER } from "@/lib/constants";
 
 interface Props {
   data: TxnMonthlyYoy[];
@@ -43,18 +45,19 @@ function CustomTooltip({
 
 export default function MonthlyYoyChart({ data }: Props) {
   const colors = useThemeColors();
-  const years = [...new Set(data.map((d) => d.year))].sort();
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-
-  // Build pivot: month_name → { [year]: spend }
-  const pivot = new Map<string, Record<number, number>>();
-  for (const row of data) {
-    if (!pivot.has(row.month_name)) pivot.set(row.month_name, {});
-    pivot.get(row.month_name)![row.year] = row.spend;
-  }
-  const chartData = months
-    .filter((m) => pivot.has(m))
-    .map((m) => ({ month_name: m, ...pivot.get(m)! }));
+  const { years, chartData } = useMemo(() => {
+    const years = [...new Set(data.map((d) => d.year))].sort();
+    // Build pivot: month_name → { [year]: spend }
+    const pivot = new Map<string, Record<number, number>>();
+    for (const row of data) {
+      if (!pivot.has(row.month_name)) pivot.set(row.month_name, {});
+      pivot.get(row.month_name)![row.year] = row.spend;
+    }
+    const chartData = MONTH_ORDER
+      .filter((m) => pivot.has(m))
+      .map((m) => ({ month_name: m, ...pivot.get(m)! }));
+    return { years, chartData };
+  }, [data]);
 
   return (
     <div className="bg-cj-surface border border-cj-border rounded-xl p-6">

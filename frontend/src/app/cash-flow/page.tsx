@@ -21,11 +21,7 @@ import CashFlowAreaChart from "@/components/CashFlowAreaChart";
 import MonthlyAccountBarChart from "@/components/MonthlyAccountBarChart";
 import CashFlowSankeyChart from "@/components/CashFlowSankeyChart";
 import { formatCurrencyFull } from "@/lib/formatting";
-
-const MONTH_NAMES: Record<number, string> = {
-  1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
-  7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
-};
+import { MONTH_NAMES } from "@/lib/constants";
 
 function SavingsBadge({ pct }: { pct: number }) {
   const color = pct >= 20 ? "text-cj-positive" : pct >= 10 ? "text-cj-warning" : "text-cj-negative";

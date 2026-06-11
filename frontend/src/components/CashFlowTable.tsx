@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { formatCurrencyFull, formatPercentage } from "@/lib/formatting";
 import type { CashFlowYearly, CashFlowMonthly } from "@/lib/types";
 
@@ -18,18 +18,30 @@ export default function CashFlowTable({
   const [expandedYear, setExpandedYear] = useState<number | null>(null);
   const [monthlyData, setMonthlyData] = useState<CashFlowMonthly[]>([]);
   const [loading, setLoading] = useState(false);
+  // Tracks the most recently requested year so a slow fetch for a year the
+  // user has since collapsed (or switched away from) can't overwrite state.
+  const requestedYear = useRef<number | null>(null);
 
   async function toggleYear(year: number) {
     if (expandedYear === year) {
+      requestedYear.current = null;
       setExpandedYear(null);
       setMonthlyData([]);
+      setLoading(false);
       return;
     }
+    requestedYear.current = year;
     setLoading(true);
     setExpandedYear(year);
-    const data = await onExpandYear(year);
-    setMonthlyData(data);
-    setLoading(false);
+    try {
+      const data = await onExpandYear(year);
+      if (requestedYear.current !== year) return;
+      setMonthlyData(data);
+    } finally {
+      // Only the still-active request may clear the spinner — a stale fetch
+      // resolving after a collapse or year switch must not touch it.
+      if (requestedYear.current === year) setLoading(false);
+    }
   }
 
   const cellClass = "px-4 py-2.5 text-sm";

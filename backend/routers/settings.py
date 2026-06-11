@@ -83,17 +83,12 @@ def reset_business_mappings() -> dict:
     df = run_query("SELECT COUNT(*) AS cnt FROM business_transaction_mappings")
     count = int(df["cnt"].iloc[0])
     execute_mutation("DELETE FROM business_transaction_mappings", {})
+    _bust_category_caches()
     return {"ok": True, "deleted": count}
 
 
 def _bust_category_caches() -> None:
+    # Mapping changes ripple into transactions, hierarchies, and dashboards,
+    # so evict everything rather than tracking individual dependent caches.
     from backend import cache as _cache_mod
-    _cache_mod._cache.pop("get_category_hierarchy", None)
-    _cache_mod._cache.pop("get_uncategorized_descriptions", None)
-    from src.db.queries.transactions import get_all_transactions, get_uncategorized_transactions, get_uncategorized_descriptions
-    from src.db.queries.categories import get_all_categories, get_category_hierarchy
-    get_all_transactions.clear()
-    get_uncategorized_transactions.clear()
-    get_uncategorized_descriptions.clear()
-    get_all_categories.clear()
-    get_category_hierarchy.clear()
+    _cache_mod.clear_all()

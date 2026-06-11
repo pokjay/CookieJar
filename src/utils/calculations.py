@@ -162,6 +162,59 @@ def aggregate_yearly_cash_flow(
     return agg.sort_values("year")
 
 
+MONTH_NAMES = {
+    1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
+    7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
+}
+
+
+def aggregate_monthly_cash_flow(
+    cash_flow_df: pd.DataFrame, year: int, person: str | None = None
+) -> pd.DataFrame:
+    """Aggregate cash flow by month for a year, optionally filtered by person."""
+    df = cash_flow_df.copy()
+    if person:
+        df = df[df["person"] == person]
+
+    df = df[df["year"] == year]
+
+    agg = (
+        df.groupby(["year", "month"])
+        .agg(
+            income=("income", "sum"),
+            expense=("expense", "sum"),
+            savings=("savings", "sum"),
+        )
+        .reset_index()
+    )
+    agg["income_expense_diff"] = agg["income"] - agg["expense"]
+    agg["savings_pct"] = (
+        (agg["income_expense_diff"] / agg["income"] * 100)
+        .round(1)
+        .where(agg["income"] > 0, 0)
+    )
+    agg["month_name"] = agg["month"].map(MONTH_NAMES)
+    return agg.sort_values(["year", "month"])
+
+
+def get_monthly_cash_flow_by_account(
+    cash_flow_df: pd.DataFrame, year: int, person: str | None = None
+) -> pd.DataFrame:
+    """Aggregate income/expense per (month, account) for a year."""
+    df = cash_flow_df.copy()
+    if person:
+        df = df[df["person"] == person]
+    df = df[df["year"] == year]
+
+    agg = (
+        df.groupby(["month", "account"])
+        .agg(expense=("expense", "sum"), income=("income", "sum"))
+        .reset_index()
+    )
+    agg["month_name"] = agg["month"].map(MONTH_NAMES)
+    return agg.sort_values("month")
+
+
 def detect_subscriptions(transactions_df: pd.DataFrame, min_months: int = 6) -> pd.DataFrame:
     """Detect recurring charges that appear in at least min_months months."""
     df = transactions_df.copy()

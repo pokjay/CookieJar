@@ -54,6 +54,7 @@ If you genuinely want parallelism inside the file, namespace the data per test (
 - **Async data races.** Components that fetch data in `useEffect` (e.g. `getSettingsAccounts` in the CSV import flow) need an explicit `page.waitForResponse(...)` before the test asserts on the rendered values — otherwise the test sometimes runs before the API returns. For dropdowns/lists whose options depend on the fetch, use `expect.poll(() => locator.count()).toBeGreaterThan(0)` so a late response still satisfies the assertion.
 - **DB-level assertions** — `e2e/manual-transactions-import.spec.ts` queries `moneyman.transactions_manual` directly via the `pg` library to verify imports landed. The playwright Docker service has `PG*` env vars wired up in `docker-compose.test.yml`; for local dev set them to your local Postgres.
 - **Stable locators.** Prefer `data-testid` attributes over CSS-class or column-index chains. The preview-table cells use `data-testid="preview-row-<i>"` / `preview-cell-<col>"`; reach inputs via `getByTestId(...).locator("input, select").first()`.
+- **Expected values come from a generated fixture.** Specs that assert on mock-data aggregates (e.g. `overview.spec.ts`) import `e2e/fixtures/expected-overview.json` instead of hardcoding totals. After changing `src/db/mock_data.py`, regenerate it with `USE_MOCK_DATA=true uv run python scripts/generate_e2e_fixtures.py` and commit the diff.
 
 ## Debugging CI e2e failures
 

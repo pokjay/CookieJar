@@ -52,9 +52,11 @@ def _derive_cash_flow_from_manual(
         mask = df["account"].isin(sign_flipped_accounts)
         df.loc[mask, "charged_amount"] = -df.loc[mask, "charged_amount"]
 
-    # Derive cash flow columns from cash_flow_type
+    # Derive cash flow columns from cash_flow_type. The monthly_cash_flow
+    # table (and mock data) store all columns as positive magnitudes, so use
+    # absolute amounts regardless of each bank's debit/credit sign convention.
     cft = df["cash_flow_type"]
-    amt = df["charged_amount"]
+    amt = df["charged_amount"].abs()
 
     df["income"] = 0.0
     df.loc[cft.isin(["salary", "other_income"]), "income"] = amt[cft.isin(["salary", "other_income"])]
@@ -63,7 +65,7 @@ def _derive_cash_flow_from_manual(
     df.loc[cft == "expense", "expense"] = amt[cft == "expense"]
 
     df["savings"] = 0.0
-    df.loc[cft == "savings", "savings"] = -amt[cft == "savings"]
+    df.loc[cft == "savings", "savings"] = amt[cft == "savings"]
 
     df["money_transferred"] = 0.0
     df.loc[cft == "internal_transfer", "money_transferred"] = amt[cft == "internal_transfer"]

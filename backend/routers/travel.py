@@ -1,5 +1,7 @@
 """Travel REST endpoints — filtered to Travel category."""
 
+import math
+
 import pandas as pd
 from fastapi import APIRouter, Query
 
@@ -72,7 +74,7 @@ def browse():
     cols = [c for c in cols if c in df.columns]
     records = df[cols].to_dict(orient="records")
     return [
-        {k: (None if isinstance(v, float) and v != v else v) for k, v in row.items()}
+        {k: (None if isinstance(v, float) and math.isnan(v) else v) for k, v in row.items()}
         for row in records
     ]
 
