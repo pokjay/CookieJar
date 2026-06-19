@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.2](https://github.com/pokjay/CookieJar/compare/v0.5.1...v0.5.2) (2026-06-19)
+
+
+### Bug Fixes
+
+* **investments:** sanitize NaN pandas values in nullable string fields ([#82](https://github.com/pokjay/CookieJar/issues/82)) ([0ed2090](https://github.com/pokjay/CookieJar/commit/0ed20902dfdd2d2489cd58e429360c335cfeab3e))
+
 ## [0.5.1](https://github.com/pokjay/CookieJar/compare/v0.5.0...v0.5.1) (2026-06-11)
 
 
