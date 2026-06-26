@@ -24,6 +24,10 @@ make e2e
 
 The `migrated_db` fixture in `tests/conftest.py` drops and recreates the `moneyman` schema for each session — your test DB is wiped clean each run. **Note:** the fixture currently only applies the initial migration; if a test depends on objects from a later migration (e.g. `app_settings`), you need to apply it manually or extend the fixture.
 
+## Unit tests can never reach a real database
+
+`tests/conftest.py` hard-forces `USE_MOCK_DATA=true` and blanks `DATABASE_URL` *before any test module is imported*, and an autouse `_enforce_mock_mode` fixture fails any non-`integration` test that isn't in mock mode. This matters because `src.db.connection` calls `load_dotenv()` at import time: without the guard, a `.env` with `USE_MOCK_DATA=false` + a real `DATABASE_URL` would leak into the unit suite (the per-file `os.environ.setdefault(...)` lines are no-ops once that's happened), and an unmarked router **write** test could read or write production data. Integration tests opt back in explicitly with `monkeypatch.setenv("USE_MOCK_DATA", "false")` + `setenv("DATABASE_URL", <test url>)` (see `test_manual_transactions_bulk.py`).
+
 ## E2E tests share database state — keep them serial inside a file
 
 This is the most common way to introduce a flaky e2e test.
