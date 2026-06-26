@@ -217,6 +217,11 @@ def _generate_investment_accounts() -> pd.DataFrame:
         (8, "Morticia", "Migdal", "קרן פנסיה מקיפה", "פנסיה", True, True, 1800, "M-PEN-001"),
         (9, "Morticia", "Leumi", 'פק"מ', "כרית בטחון", True, False, 0, "M-RDF-001"),
         (10, "Morticia", "Mizrahi", "עובר ושב", "עובר ושב", True, False, 0, "M-BNK-001"),
+        # Closed Hishtalmut fund: Gomez switched providers in 2024, moving the
+        # balance into the active Meitav Hishtalmut account (id 2). is_active=False
+        # and tracking stops at the switch — exercises the "drop after close" path
+        # in the net-worth-over-time charts.
+        (11, "Gomez", "Altshuler", "קרן השתלמות", "קרן השתלמות", False, False, 0, "G-HSH-OLD"),
     ]
     cols = [
         "id",
@@ -242,10 +247,18 @@ def _generate_investment_accounts() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 
+# Models a provider switch: account 11 (closed) stops tracking after 2023 and its
+# final balance moves into the active sibling 2, keeping net worth continuous.
+_CLOSED_ACCOUNT_ID = 11
+_CLOSED_ACCOUNT_SIBLING_ID = 2
+_CLOSED_ACCOUNT_LAST_YEAR = 2023
+
+
 def _generate_investment_tracking() -> pd.DataFrame:
     accounts = get_investment_accounts()
     rows = []
     row_id = 1
+    closed_final_balance = 0.0
 
     for _, acc in accounts.iterrows():
         # Base amount depends on category
@@ -264,6 +277,9 @@ def _generate_investment_tracking() -> pd.DataFrame:
         day_offset = 25 + (acc["id"] % 6)
 
         for year in range(2022, 2026):
+            # The closed account stops being scraped once it's switched away.
+            if acc["id"] == _CLOSED_ACCOUNT_ID and year > _CLOSED_ACCOUNT_LAST_YEAR:
+                break
             for quarter_month in [3, 6, 9, 12]:
                 if year == 2025 and quarter_month > 9:
                     break
@@ -279,8 +295,19 @@ def _generate_investment_tracking() -> pd.DataFrame:
                 )
                 row_id += 1
 
+        if acc["id"] == _CLOSED_ACCOUNT_ID:
+            closed_final_balance = amount
+
     df = pd.DataFrame(rows)
     df["activity_date"] = pd.to_datetime(df["activity_date"])
+
+    # The closed fund's balance moves into its active sibling at the switch, so the
+    # household net-worth line stays continuous across the provider change.
+    transfer_from = pd.Timestamp(f"{_CLOSED_ACCOUNT_LAST_YEAR + 1}-01-01")
+    absorbs = (df["investment_accounts_id"] == _CLOSED_ACCOUNT_SIBLING_ID) & (
+        df["activity_date"] >= transfer_from
+    )
+    df.loc[absorbs, "amount"] = (df.loc[absorbs, "amount"] + closed_final_balance).round(2)
     return df
 
 
