@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.3](https://github.com/pokjay/CookieJar/compare/v0.5.2...v0.5.3) (2026-06-26)
+
+
+### Bug Fixes
+
+* **overview:** correct ~50% inflation in Net Worth by Category Over Time ([#86](https://github.com/pokjay/CookieJar/issues/86)) ([8eedbba](https://github.com/pokjay/CookieJar/commit/8eedbba723f80d9535f01a7ff73174e491e8f699))
+
 ## [0.5.2](https://github.com/pokjay/CookieJar/compare/v0.5.1...v0.5.2) (2026-06-19)
 
 
