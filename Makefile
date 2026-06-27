@@ -4,7 +4,7 @@ COMPOSE_DEV  := $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
 COMPOSE_DEVDB := $(COMPOSE) -f docker-compose.yml -f docker-compose.db.yml -f docker-compose.dev.yml
 COMPOSE_E2E  := $(COMPOSE) -f docker-compose.yml -f docker-compose.build.yml -f docker-compose.db.yml -f docker-compose.test.yml
 
-.PHONY: up down logs dev dev-db dev-down e2e e2e-up e2e-run e2e-down e2e-clean
+.PHONY: up down logs dev dev-rebuild dev-db dev-down e2e e2e-up e2e-run e2e-down e2e-clean
 
 # ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -26,6 +26,11 @@ dev:
 ## Start with hot-reload + local seeded database
 dev-db:
 	$(COMPOSE_DEVDB) up --build
+
+## Rebuild after dependency changes (package.json / pyproject). Renews the
+## anonymous node_modules volume, which a plain `make dev --build` reuses stale.
+dev-rebuild:
+	$(COMPOSE_DEV) up --build --renew-anon-volumes
 
 ## Stop dev services
 dev-down:

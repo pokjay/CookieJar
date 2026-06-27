@@ -1,6 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../../tailwind.config.ts";
 
 /* ─── CookieJar design tokens (RGB triplets for Tailwind opacity modifiers) ── */
 
@@ -52,6 +51,15 @@ body {
   background: rgb(var(--cj-bg));
   color: rgb(var(--cj-text));
   font-family: "Inter", system-ui, -apple-system, sans-serif;
+}
+
+/* Tailwind v4 preflight defaults buttons to `cursor: default`; restore the
+   pointer on interactive (non-disabled) controls as in v3. */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
 /* ─── Scrollbar ─────────────────────────────────────────────────────────── */
