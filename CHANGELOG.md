@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.4](https://github.com/pokjay/CookieJar/compare/v0.5.3...v0.5.4) (2026-06-27)
+
+
+### Bug Fixes
+
+* **frontend:** stop clipping income/expense bar labels ([#92](https://github.com/pokjay/CookieJar/issues/92)) ([#93](https://github.com/pokjay/CookieJar/issues/93)) ([b85ac7c](https://github.com/pokjay/CookieJar/commit/b85ac7c49ba71a249e5f2336e089e0bf57fdc6ca))
+
 ## [0.5.3](https://github.com/pokjay/CookieJar/compare/v0.5.2...v0.5.3) (2026-06-26)
 
 
