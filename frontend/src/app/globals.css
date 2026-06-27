@@ -54,13 +54,6 @@ body {
   font-family: "Inter", system-ui, -apple-system, sans-serif;
 }
 
-/* ─── Tremor overrides ──────────────────────────────────────────────────── */
-
-.dark .tremor-Card-root {
-  --tremor-background-default: #111827 !important;
-  --tremor-border-default: #1f2937 !important;
-}
-
 /* ─── Scrollbar ─────────────────────────────────────────────────────────── */
 
 ::-webkit-scrollbar        { width: 8px; }
