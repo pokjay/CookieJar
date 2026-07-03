@@ -46,8 +46,9 @@ def _check_rate_limit(request: Request) -> None:
 
 
 def _mock_guard() -> None:
+    """Sync needs a real database; vault management is pure file I/O and stays available."""
     if is_mock_mode():
-        raise HTTPException(status_code=503, detail="Scraper unavailable in mock mode.")
+        raise HTTPException(status_code=503, detail="Sync unavailable in mock mode.")
 
 
 def _vault_open_or_404(db_password: str) -> None:
@@ -99,7 +100,6 @@ class SyncPayload(BaseModel):
 
 @router.post("/init")
 def scraper_init(payload: InitPayload, request: Request) -> dict:
-    _mock_guard()
     _check_rate_limit(request)
     try:
         init_vault(payload.db_password.get_secret_value())
@@ -110,7 +110,6 @@ def scraper_init(payload: InitPayload, request: Request) -> dict:
 
 @router.post("/accounts/list")
 def scraper_list_accounts(payload: ListPayload, request: Request) -> list[dict]:
-    _mock_guard()
     _check_rate_limit(request)
     try:
         return list_accounts(payload.db_password.get_secret_value())
@@ -122,7 +121,6 @@ def scraper_list_accounts(payload: ListPayload, request: Request) -> list[dict]:
 
 @router.post("/accounts")
 def scraper_add_account(payload: AddAccountPayload, request: Request) -> dict:
-    _mock_guard()
     _check_rate_limit(request)
     try:
         uid = add_account(
@@ -142,7 +140,6 @@ def scraper_add_account(payload: AddAccountPayload, request: Request) -> dict:
 
 @router.put("/accounts/{uuid}")
 def scraper_update_account(uuid: str, payload: UpdateAccountPayload, request: Request) -> dict:
-    _mock_guard()
     _check_rate_limit(request)
     try:
         update_account(
@@ -165,7 +162,6 @@ def scraper_update_account(uuid: str, payload: UpdateAccountPayload, request: Re
 
 @router.delete("/accounts/{uuid}")
 def scraper_delete_account(uuid: str, payload: DeleteAccountPayload, request: Request) -> dict:
-    _mock_guard()
     _check_rate_limit(request)
     try:
         delete_account(uuid_str=uuid, db_password=payload.db_password.get_secret_value())
@@ -210,7 +206,6 @@ def scraper_sync(
 @router.get("/status")
 def scraper_status() -> dict[str, Any]:
     """Last run info + vault availability. Never cached."""
-    _mock_guard()
     return {
         "vault_available": is_vault_available(),
         "is_running": has_running_run() if not is_mock_mode() else False,
