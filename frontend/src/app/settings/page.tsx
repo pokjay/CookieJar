@@ -13,6 +13,7 @@ import {
   resetBusinessMappings,
 } from "@/lib/api";
 import type { AppSettings } from "@/lib/types";
+import ScraperSettings from "@/components/ScraperSettings";
 
 interface ConfirmDialogProps {
   title: string;
@@ -421,6 +422,14 @@ export default function SettingsPage() {
           <span className="text-cj-negative text-sm">{saveError}</span>
         )}
       </div>
+
+      {/* Bank Accounts (Scraper) */}
+      <Section
+        title="Bank Accounts"
+        caption="Link bank accounts to automatically fetch transactions. Credentials are stored in an encrypted KeePass vault — your password is required each time you sync or manage accounts."
+      >
+        <ScraperSettings />
+      </Section>
 
       {/* Mapping Management */}
       <Section

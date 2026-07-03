@@ -2,6 +2,7 @@
 
 import hmac
 import os
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -14,11 +15,22 @@ from backend.routers.categories import router as categories_router
 from backend.routers.investments import router as investments_router
 from backend.routers.manual_transactions import router as manual_transactions_router
 from backend.routers.overview import router as overview_router
+from backend.routers.scraper import router as scraper_router
 from backend.routers.settings import router as settings_router
 from backend.routers.transactions import router as transactions_router
 from backend.routers.travel import router as travel_router
 
-app = FastAPI(title="Family Money Tracker API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from src.db.connection import is_mock_mode
+    if not is_mock_mode():
+        from src.db.mutations.scraper import mark_stale_runs
+        mark_stale_runs()
+    yield
+
+
+app = FastAPI(title="Family Money Tracker API", lifespan=lifespan)
 
 # The frontend talks to the backend server-side (Next.js proxy), so browsers
 # never need cross-origin access. Only enable CORS for origins explicitly
@@ -46,6 +58,7 @@ async def require_api_secret(request: Request, call_next):
 
 app.include_router(business_router, prefix="/api")
 app.include_router(categories_router, prefix="/api")
+app.include_router(scraper_router, prefix="/api")
 app.include_router(manual_transactions_router, prefix="/api")
 app.include_router(overview_router, prefix="/api")
 app.include_router(cash_flow_router, prefix="/api")

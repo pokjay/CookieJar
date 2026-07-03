@@ -310,3 +310,57 @@ export interface AppSettings {
   cash_flow_accounts: string[];
   account_person_mapping: Record<string, string>;
 }
+
+// ── Scraper ───────────────────────────────────────────────────────────────────
+
+export type ScraperProvider = "isracard" | "visaCal" | "max" | "amex";
+
+export interface ScraperAccount {
+  uuid: string;
+  title: string;
+  provider: ScraperProvider | string;
+  field_names: string[];
+}
+
+export interface ScraperRunAccount {
+  account: string;
+  company_id: string;
+  status: "pending" | "success" | "error";
+  error_type: string | null;
+  transactions_imported: number;
+}
+
+export interface ScraperRun {
+  id: string;
+  status: "running" | "success" | "partial" | "error";
+  lookback_days: number;
+  started_at: string;
+  finished_at: string | null;
+  accounts: ScraperRunAccount[];
+}
+
+export interface ScraperStatus {
+  vault_available: boolean;
+  is_running: boolean;
+  last_run: ScraperRun | null;
+  providers: string[];
+}
+
+export interface ScraperSyncPayload {
+  db_password: string;
+  lookback_days: number;
+}
+
+export interface ScraperAddAccountPayload {
+  title: string;
+  provider: string;
+  credential_fields: Record<string, string>;
+  db_password: string;
+}
+
+export interface ScraperUpdateAccountPayload {
+  db_password: string;
+  title?: string;
+  provider?: string;
+  credential_fields?: Record<string, string>;
+}
