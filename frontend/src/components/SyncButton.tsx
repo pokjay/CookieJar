@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { getScraperStatus, triggerSync } from "@/lib/api";
+import { getScraperStatus, triggerSync, ApiError } from "@/lib/api";
 import type { ScraperStatus } from "@/lib/types";
 
 // ── SyncModal ─────────────────────────────────────────────────────────────────
@@ -185,19 +185,30 @@ export default function SyncButton() {
       await fetchStatus();
       startPolling();
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("401") || /wrong|unauthorized/i.test(msg)) {
-        setError("Wrong vault password.");
-      } else if (msg.includes("409") || /running/i.test(msg)) {
-        setError("A sync is already running.");
-        setShowModal(false);
-        await fetchStatus();
-        startPolling();
-      } else if (msg.includes("422") || /no accounts/i.test(msg)) {
-        setError("No accounts in vault. Add accounts in Settings → Bank Accounts.");
-        setShowModal(false);
+      if (e instanceof ApiError) {
+        switch (e.status) {
+          case 401:
+            setError("Wrong vault password.");
+            break;
+          case 409:
+            setError("A sync is already running.");
+            setShowModal(false);
+            await fetchStatus();
+            startPolling();
+            break;
+          case 422:
+            setError("No accounts in vault. Add accounts in Settings → Bank Accounts.");
+            setShowModal(false);
+            break;
+          case 429:
+            setError("Too many failed password attempts. Try again in a minute.");
+            break;
+          default:
+            setError(e.message);
+            setShowModal(false);
+        }
       } else {
-        setError(msg);
+        setError(e instanceof Error ? e.message : String(e));
         setShowModal(false);
       }
     } finally {

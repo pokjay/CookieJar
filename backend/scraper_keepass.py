@@ -77,15 +77,14 @@ def list_accounts(db_password: str) -> list[dict[str, Any]]:
         kp = _open(db_password)
         result = []
         for entry in kp.entries:
-            result.append({
-                "uuid": str(entry.uuid),
-                "title": entry.title,
-                "provider": entry.get_custom_property("provider") or "",
-                "field_names": [
-                    k for k in (entry.custom_properties or {})
-                    if k != "provider"
-                ],
-            })
+            result.append(
+                {
+                    "uuid": str(entry.uuid),
+                    "title": entry.title,
+                    "provider": entry.get_custom_property("provider") or "",
+                    "field_names": [k for k in (entry.custom_properties or {}) if k != "provider"],
+                }
+            )
         return result
 
 
@@ -98,11 +97,13 @@ def get_credentials(db_password: str) -> list[dict[str, Any]]:
             provider = entry.get_custom_property("provider") or ""
             custom = entry.custom_properties or {}
             credentials = {k: v for k, v in custom.items() if k != "provider"}
-            result.append({
-                "companyId": provider,
-                "accountTitle": entry.title,
-                "credentials": credentials,
-            })
+            result.append(
+                {
+                    "companyId": provider,
+                    "accountTitle": entry.title,
+                    "credentials": credentials,
+                }
+            )
         return result
 
 
@@ -146,6 +147,10 @@ def update_account(
                 raise UnknownProviderError(f"Unknown provider: {provider!r}")
             entry.set_custom_property("provider", provider)
         if credential_fields is not None:
+            existing = list(entry.custom_properties or {})
+            for key in existing:
+                if key != "provider":
+                    entry.delete_custom_property(key)
             for key, value in credential_fields.items():
                 entry.set_custom_property(key, value)
         _atomic_save(kp)
