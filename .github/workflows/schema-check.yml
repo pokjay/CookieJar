@@ -1,12 +1,15 @@
 name: Schema check
 
-# Fails when db/schema.sql is out of sync with db/migrations/.
-#
-# Instead of re-running `dbmate dump` and diffing the text (which breaks
-# whenever the pg_dump version that generated the committed file differs from
-# the runner's), this builds two databases — one from the migrations, one from
-# the committed db/schema.sql — and dumps BOTH with the runner's pg_dump.
-# Same pg_dump on both sides means the diff only ever shows real schema drift.
+# Fails when db/schema.sql is out of sync with db/migrations/. On a pull
+# request, first tries to fix it: dbmate dump a fresh schema.sql from a
+# database built purely from the migrations, then commit and push that fix
+# back to the PR's own head branch. A direct push to main (bypassing a PR)
+# is never auto-fixed — it just fails loudly, since main shouldn't be
+# self-modified by a bot without a PR to review the change first. The
+# compare step itself still uses two databases dumped with the SAME pg_dump
+# (the runner's), not a text diff against the committed file, so it never
+# false-positives on pg_dump version skew between whoever last committed
+# schema.sql and CI.
 
 on:
   pull_request:
@@ -18,7 +21,7 @@ on:
       - "db/**"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   schema-drift:
@@ -40,8 +43,14 @@ jobs:
       PGHOST: 127.0.0.1
       PGUSER: postgres
       PGPASSWORD: postgres
+      FROM_MIGRATIONS_URL: postgres://postgres:postgres@127.0.0.1:5432/from_migrations?sslmode=disable&options=-csearch_path%3Dmoneyman
     steps:
       - uses: actions/checkout@v4
+        with:
+          # pull_request's default checkout is the ephemeral merge commit
+          # (refs/pull/N/merge) — can't push a fix back to that. Check out the
+          # actual branch (PR head, or main) so the auto-fix step can commit.
+          ref: ${{ github.head_ref || github.ref_name }}
 
       - name: Install dbmate
         run: |
@@ -55,8 +64,7 @@ jobs:
           # dbmate needs the search_path schema to exist before it can create
           # its schema_migrations table there.
           psql -d from_migrations -c 'CREATE SCHEMA IF NOT EXISTS moneyman'
-          DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/from_migrations?sslmode=disable&options=-csearch_path%3Dmoneyman" \
-            dbmate --no-dump-schema up
+          DATABASE_URL="$FROM_MIGRATIONS_URL" dbmate --no-dump-schema up
 
       - name: Build database from committed db/schema.sql
         run: |
@@ -67,6 +75,7 @@ jobs:
           grep -vE '^\\(un)?restrict' db/schema.sql | psql -v ON_ERROR_STOP=1 -d from_schema
 
       - name: Compare schemas and migration versions
+        id: compare
         run: |
           # pg_dump emits \restrict lines with a random per-run token; drop them.
           dump() { pg_dump --schema-only --no-owner --no-privileges -d "$1" | grep -vE '^\\(un)?restrict'; }
@@ -76,8 +85,37 @@ jobs:
           diff -u <(dump from_schema) <(dump from_migrations) || fail=1
           diff -u <(versions from_schema) <(versions from_migrations) || fail=1
 
-          if [ "$fail" -ne 0 ]; then
-            echo "::error file=db/schema.sql::db/schema.sql is out of sync with db/migrations/. Apply migrations to a database (e.g. make dev-db) and run 'dbmate dump', then commit the regenerated db/schema.sql."
+          if [ "$fail" -eq 0 ]; then
+            echo "db/schema.sql is in sync with db/migrations/."
+            echo "in_sync=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "in_sync=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Auto-fix only applies to PRs, pushing the fix back to that PR's own
+      # head branch. A direct push to main (bypassing a PR) is left to fail
+      # loudly instead — main should never be self-modified by a bot without
+      # a PR to review the change first.
+      - name: Auto-fix db/schema.sql (pull_request only)
+        if: steps.compare.outputs.in_sync == 'false' && github.event_name == 'pull_request'
+        run: |
+          DATABASE_URL="$FROM_MIGRATIONS_URL" dbmate dump
+
+          if git diff --quiet -- db/schema.sql; then
+            echo "::error file=db/schema.sql::db/schema.sql was reported out of sync, but 'dbmate dump' produced no change. This needs manual investigation — see the diff above for what actually differs."
             exit 1
           fi
-          echo "db/schema.sql is in sync with db/migrations/."
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add db/schema.sql
+          git commit -m "chore(db): regenerate schema.sql from migrations"
+          git push origin "HEAD:${{ github.head_ref }}"
+
+          echo "::notice file=db/schema.sql::db/schema.sql was out of sync with db/migrations/ — regenerated and pushed automatically (commit $(git rev-parse --short HEAD)). Note: GitHub does not trigger new workflow runs from a GITHUB_TOKEN-authored push, so other checks (e2e, CodeQL) will NOT automatically re-run against this new commit — push any other change, or re-run them manually from the Actions tab, to get them green on the latest commit."
+
+      - name: Fail on drift outside a pull request (e.g. a direct push to main)
+        if: steps.compare.outputs.in_sync == 'false' && github.event_name != 'pull_request'
+        run: |
+          echo "::error file=db/schema.sql::db/schema.sql is out of sync with db/migrations/ on ${{ github.ref_name }}. This should have been caught in the PR that introduced it — investigate and fix manually (apply migrations, e.g. via 'make dev-db', run 'dbmate dump', commit db/schema.sql, and push a PR)."
+          exit 1

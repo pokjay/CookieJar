@@ -1,0 +1,13 @@
+# Reverse proxy config for Caddy — terminates TLS in front of CookieJar.
+# Copy to `Caddyfile` and replace the domain below with your own; it must
+# already have a DNS A/AAAA record pointing at this host so Let's Encrypt can
+# issue and auto-renew a certificate (no manual cert management needed).
+#
+# Usage:
+#   cp Caddyfile.example Caddyfile
+#   # edit the domain below
+#   docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+
+your-domain.example.com {
+	reverse_proxy frontend:3000
+}
