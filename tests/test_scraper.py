@@ -92,17 +92,24 @@ def test_transaction_unique_id_unparseable_date_keeps_string_fallback():
     assert transaction_unique_id(tx, "isracard", "1234") == "not-a-date_isracard_1234_1_x"
 
 
-def test_transaction_unique_id_naive_datetime_keeps_string_fallback():
-    """A naive datetime has no offset to convert from, so it falls back to the
-    raw string just like an unparseable one - it isn't truncated as UTC."""
+def test_transaction_unique_id_naive_datetime_truncates_directly():
+    """A naive datetime carries no offset, meaning it already is local wall
+    time - it truncates to its own calendar date without tz conversion."""
     tx = {"date": "2026-06-01T00:00:00", "chargedAmount": 1, "identifier": "x"}
-    assert transaction_unique_id(tx, "isracard", "1234") == "2026-06-01T00:00:00_isracard_1234_1_x"
+    assert transaction_unique_id(tx, "isracard", "1234") == "2026-06-01_isracard_1234_1_x"
 
 
-def test_build_transaction_row_naive_datetime_activity_date_is_raw_string():
+def test_build_transaction_row_naive_datetime_activity_date_is_date():
     tx = {"date": "2026-06-01T00:00:00", "chargedAmount": 1, "identifier": "x"}
     row = _build_transaction_row(tx, "isracard", "1234")
-    assert row["activity_date"] == "2026-06-01T00:00:00"
+    assert row["activity_date"] == date(2026, 6, 1)
+
+
+def test_build_transaction_row_unparseable_date_returns_none():
+    """activity_date is a DATE NOT NULL column; a row that can't produce a real
+    date must be dropped (and logged) rather than poison the batched insert."""
+    tx = {"date": "not-a-date", "chargedAmount": 1, "identifier": "x"}
+    assert _build_transaction_row(tx, "isracard", "1234") is None
 
 
 # ── src/db/mutations/scraper.py — every function must guard is_mock_mode()

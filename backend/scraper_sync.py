@@ -31,16 +31,16 @@ def _parse_tx_date(raw_date: str) -> date | None:
     moneyman derives its yyyy-MM-dd from local time, so a tz-aware value is
     converted to SCRAPER_TZ before truncating to a date - otherwise a
     local-midnight transaction serialized as the previous day's UTC evening
-    would land on the wrong date. Returns None (falling back to the raw string)
-    for naive datetimes, which carry no offset to convert from, and for
-    unparseable strings.
+    would land on the wrong date. A naive datetime carries no offset, meaning
+    it already is local wall time, so it truncates directly. Returns None only
+    for unparseable strings.
     """
     try:
         dt = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
         return None
     if dt.tzinfo is None:
-        return None
+        return dt.date()
     return dt.astimezone(ZoneInfo(_SCRAPER_TZ)).date()
 
 
@@ -82,13 +82,19 @@ def _scrape_account(credential: dict, start_date: str) -> dict:
         return resp.json()
 
 
-def _build_transaction_row(tx: dict, company_id: str, account_number: str) -> dict:
-    """Map a scraped transaction into the row shape upsert_transactions() expects."""
-    uid = transaction_unique_id(tx, company_id, account_number)
+def _build_transaction_row(tx: dict, company_id: str, account_number: str) -> dict | None:
+    """Map a scraped transaction into the row shape upsert_transactions() expects.
 
+    Returns None when the tx date can't be parsed: activity_date is a DATE NOT
+    NULL column, so an unparseable value would abort the account's whole
+    batched insert. The caller skips (and logs) such transactions instead.
+    """
     raw_date = tx.get("date", "")
-    parsed_date = _parse_tx_date(raw_date)
-    activity_date = parsed_date if parsed_date else raw_date
+    activity_date = _parse_tx_date(raw_date)
+    if activity_date is None:
+        return None
+
+    uid = transaction_unique_id(tx, company_id, account_number)
 
     return {
         "unique_id": uid,
@@ -155,7 +161,7 @@ def run_sync(credentials: list[dict], run_id: str, lookback_days: int) -> None:
             top_level_account_number = result.get("accountNumber")
             txns = result.get("transactions", [])
             try:
-                rows = [
+                maybe_rows = [
                     _build_transaction_row(
                         tx,
                         company_id,
@@ -163,6 +169,15 @@ def run_sync(credentials: list[dict], run_id: str, lookback_days: int) -> None:
                     )
                     for tx in txns
                 ]
+                rows = [r for r in maybe_rows if r is not None]
+                skipped = len(maybe_rows) - len(rows)
+                if skipped:
+                    logger.warning(
+                        "Skipped %d transaction(s) with unparseable dates for %s/%s",
+                        skipped,
+                        company_id,
+                        account_title,
+                    )
                 imported = upsert_transactions(rows)
             except Exception as exc:
                 logger.error("Upsert failed for %s/%s: %s", company_id, account_title, exc)
