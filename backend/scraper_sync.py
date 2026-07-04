@@ -8,11 +8,12 @@ from datetime import date, datetime, timedelta
 import httpx
 
 from backend.cache import clear_all
-from src.db.connection import execute_mutation, is_mock_mode
+from src.db.connection import is_mock_mode
 from src.db.mutations.scraper import (
     finish_run,
     finish_run_account,
     insert_run_account,
+    upsert_transactions,
 )
 
 logger = logging.getLogger(__name__)
@@ -65,60 +66,34 @@ def _scrape_account(credential: dict, start_date: str) -> dict:
         return resp.json()
 
 
-def _upsert_transactions(transactions: list[dict], company_id: str, account_number: str) -> int:
-    """Upsert scraped transactions into moneyman.transactions. Returns count inserted."""
-    if not transactions:
-        return 0
+def _build_transaction_row(tx: dict, company_id: str, account_number: str) -> dict:
+    """Map a scraped transaction into the row shape upsert_transactions() expects."""
+    uid = transaction_unique_id(tx, company_id, account_number)
 
-    inserted = 0
-    for tx in transactions:
-        uid = transaction_unique_id(tx, company_id, account_number)
+    raw_date = tx.get("date", "")
+    try:
+        activity_date = datetime.fromisoformat(raw_date.replace("Z", "+00:00")).date()
+    except (ValueError, AttributeError):
+        activity_date = raw_date
 
-        raw_date = tx.get("date", "")
-        try:
-            activity_date = datetime.fromisoformat(raw_date.replace("Z", "+00:00")).date()
-        except (ValueError, AttributeError):
-            activity_date = raw_date
-
-        execute_mutation(
-            """
-            INSERT INTO transactions (
-                unique_id, company_id, account, status,
-                activity_date, charged_amount, charged_currency,
-                original_amount, original_currency,
-                description, memo, identifier, installments, raw,
-                created_at, updated_at
-            ) VALUES (
-                :unique_id, :company_id, :account, :status,
-                :activity_date, :charged_amount, :charged_currency,
-                :original_amount, :original_currency,
-                :description, :memo, :identifier, :installments::jsonb, :raw::jsonb,
-                now(), now()
-            )
-            ON CONFLICT (unique_id) DO NOTHING
-            """,
-            {
-                "unique_id": uid,
-                "company_id": company_id,
-                "account": account_number,
-                "status": tx.get("status", "completed"),
-                "activity_date": activity_date,
-                "charged_amount": tx.get("chargedAmount"),
-                "charged_currency": tx.get("chargedCurrency"),
-                "original_amount": tx.get("originalAmount"),
-                "original_currency": tx.get("originalCurrency"),
-                "description": tx.get("description"),
-                "memo": tx.get("memo"),
-                "identifier": tx.get("identifier"),
-                "installments": (
-                    json.dumps(tx.get("installments")) if tx.get("installments") else None
-                ),
-                "raw": json.dumps(tx),
-            },
-        )
-        inserted += 1
-
-    return inserted
+    return {
+        "unique_id": uid,
+        "company_id": company_id,
+        "account": account_number,
+        "status": tx.get("status", "completed"),
+        "activity_date": activity_date,
+        "charged_amount": tx.get("chargedAmount"),
+        "charged_currency": tx.get("chargedCurrency"),
+        "original_amount": tx.get("originalAmount"),
+        "original_currency": tx.get("originalCurrency"),
+        "description": tx.get("description"),
+        "memo": tx.get("memo"),
+        "identifier": tx.get("identifier"),
+        "installments": (
+            json.dumps(tx.get("installments")) if tx.get("installments") else None
+        ),
+        "raw": json.dumps(tx),
+    }
 
 
 def run_sync(credentials: list[dict], run_id: str, lookback_days: int) -> None:
@@ -159,7 +134,8 @@ def run_sync(credentials: list[dict], run_id: str, lookback_days: int) -> None:
         account_number = result.get("accountNumber", account_title)
         txns = result.get("transactions", [])
         try:
-            imported = _upsert_transactions(txns, company_id, account_number)
+            rows = [_build_transaction_row(tx, company_id, account_number) for tx in txns]
+            imported = upsert_transactions(rows)
         except Exception as exc:
             logger.error("Upsert failed for %s/%s: %s", company_id, account_title, exc)
             finish_run_account(run_id, account_title, company_id, "error", "db_error", 0)

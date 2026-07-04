@@ -35,6 +35,34 @@ def execute_mutation(sql: str, params: dict | None = None) -> None:
         conn.execute(text(sql), params or {})
 
 
+def execute_returning(sql: str, params: dict | None = None) -> pd.DataFrame:
+    """Run a write statement with a RETURNING clause and commit it.
+
+    Unlike run_query (a plain engine.connect(), meant for read-only SELECTs),
+    this wraps engine.begin() so the write is actually committed.
+    """
+    engine = _get_engine()
+    with engine.begin() as conn:
+        return pd.read_sql(text(sql), conn, params=params or {})
+
+
+def execute_mutations_batch(sql: str, params_list: list[dict]) -> int:
+    """Run the same RETURNING statement for many param sets in one transaction.
+
+    Returns the number of rows actually returned/affected (e.g. real inserts
+    when the statement uses ON CONFLICT ... DO NOTHING RETURNING ...).
+    """
+    if not params_list:
+        return 0
+    engine = _get_engine()
+    total = 0
+    with engine.begin() as conn:
+        for params in params_list:
+            result = conn.execute(text(sql), params)
+            total += result.rowcount
+    return total
+
+
 def get_enum_values(enum_name: str) -> list[str]:
     """Get the allowed values for a PostgreSQL enum type."""
     engine = _get_engine()

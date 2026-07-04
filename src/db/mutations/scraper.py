@@ -1,20 +1,41 @@
-"""DB mutations for scraper run tracking."""
+"""DB mutations for scraper run tracking and transaction upserts."""
 
-from src.db.connection import execute_mutation, is_mock_mode, run_query
+from sqlalchemy.exc import IntegrityError
+
+from src.db.connection import (
+    execute_mutation,
+    execute_mutations_batch,
+    execute_returning,
+    is_mock_mode,
+)
+
+
+class RunAlreadyRunningError(Exception):
+    """Raised when insert_run() loses the race against the DB's one-running-run guard."""
 
 
 def insert_run(lookback_days: int) -> str:
-    """Insert a new scraper_run row with status='running'. Returns the run UUID."""
+    """Insert a new scraper_run row with status='running'. Returns the run UUID.
+
+    has_running_run() is checked by the caller first as a fast, cheap pre-check,
+    but that check and this insert are not atomic — a concurrent request can
+    pass the check too. The DB's partial unique index (scraper_runs_one_running)
+    is the authoritative guard: a losing insert raises IntegrityError here,
+    which we translate to RunAlreadyRunningError for the router to map to 409.
+    """
     if is_mock_mode():
         return "mock-run-id"
-    df = run_query(
-        """
-        INSERT INTO scraper_runs (lookback_days, status)
-        VALUES (:lookback_days, 'running')
-        RETURNING id::text
-        """,
-        {"lookback_days": lookback_days},
-    )
+    try:
+        df = execute_returning(
+            """
+            INSERT INTO scraper_runs (lookback_days, status)
+            VALUES (:lookback_days, 'running')
+            RETURNING id::text
+            """,
+            {"lookback_days": lookback_days},
+        )
+    except IntegrityError as exc:
+        raise RunAlreadyRunningError("A sync is already running.") from exc
     return df["id"].iloc[0]
 
 
@@ -90,3 +111,40 @@ def mark_stale_runs() -> None:
         """,
         {},
     )
+
+
+_UPSERT_TRANSACTION_SQL = """
+    INSERT INTO transactions (
+        unique_id, company_id, account, status,
+        activity_date, charged_amount, charged_currency,
+        original_amount, original_currency,
+        description, memo, identifier, installments, raw,
+        created_at, updated_at
+    ) VALUES (
+        :unique_id, :company_id, :account, :status,
+        :activity_date, :charged_amount, :charged_currency,
+        :original_amount, :original_currency,
+        :description, :memo, :identifier, :installments::jsonb, :raw::jsonb,
+        now(), now()
+    )
+    ON CONFLICT (unique_id) DO NOTHING
+"""
+
+
+def upsert_transactions(rows: list[dict]) -> int:
+    """Upsert already-shaped transaction rows into moneyman.transactions.
+
+    Each row must have unique_id, company_id, account, status, activity_date,
+    charged_amount, charged_currency, original_amount, original_currency,
+    description, memo, identifier, installments (JSON string or None), raw
+    (JSON string). Mapping from the scraper's transaction shape to this row
+    shape is the caller's responsibility (backend/scraper_sync.py), since it
+    owns transaction_unique_id() and the moneyman-compatibility logic.
+
+    Returns the number of rows actually inserted — rows skipped by
+    ON CONFLICT DO NOTHING are not counted. All rows are written in a single
+    DB transaction rather than one per row.
+    """
+    if is_mock_mode():
+        return 0
+    return execute_mutations_batch(_UPSERT_TRANSACTION_SQL, rows)

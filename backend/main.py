@@ -1,6 +1,7 @@
 """FastAPI backend."""
 
 import hmac
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -26,7 +27,15 @@ async def lifespan(app: FastAPI):
     from src.db.connection import is_mock_mode
     if not is_mock_mode():
         from src.db.mutations.scraper import mark_stale_runs
-        mark_stale_runs()
+        try:
+            mark_stale_runs()
+        except Exception:
+            # A transient DB outage at boot shouldn't prevent the API from
+            # starting — worst case, a stale 'running' scraper_runs row
+            # lingers until the next successful startup.
+            logging.getLogger(__name__).exception(
+                "mark_stale_runs() failed at startup; continuing anyway"
+            )
     yield
 
 

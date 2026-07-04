@@ -23,7 +23,7 @@ from backend.scraper_keepass import (
 )
 from backend.scraper_sync import run_sync
 from src.db.connection import is_mock_mode
-from src.db.mutations.scraper import insert_run
+from src.db.mutations.scraper import RunAlreadyRunningError, insert_run
 from src.db.queries.scraper import get_last_run, has_running_run
 
 router = APIRouter(prefix="/scraper")
@@ -198,14 +198,26 @@ def scraper_sync(
     if not credentials:
         raise HTTPException(status_code=422, detail="No accounts in vault.")
 
-    run_id = insert_run(payload.lookback_days)
+    # has_running_run() above is a cheap pre-check, not an atomic guard — a
+    # concurrent request can race past it too. insert_run() relies on the DB's
+    # partial unique index as the real guard and raises RunAlreadyRunningError
+    # if this request lost the race, which we map to the same 409 here.
+    try:
+        run_id = insert_run(payload.lookback_days)
+    except RunAlreadyRunningError:
+        raise HTTPException(status_code=409, detail="A sync is already running.")
     background_tasks.add_task(run_sync, credentials, run_id, payload.lookback_days)
     return {"run_id": run_id}
 
 
 @router.get("/status")
 def scraper_status() -> dict[str, Any]:
-    """Last run info + vault availability. Never cached."""
+    """Last run info + vault availability.
+
+    Not cached (no @ttl_cached), unlike other data endpoints in this codebase:
+    SyncButton.tsx polls this every 3s to show live sync progress, so a 5-minute
+    TTL cache would show a stale "running" state well after a sync finishes.
+    """
     return {
         "vault_available": is_vault_available(),
         "is_running": has_running_run() if not is_mock_mode() else False,
