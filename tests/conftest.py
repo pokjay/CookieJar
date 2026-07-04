@@ -46,9 +46,7 @@ def _enforce_mock_mode(request):
     )
 
 
-MIGRATION_FILE = (
-    Path(__file__).parent.parent / "db" / "migrations" / "20260417000000_initial_schema.sql"
-)
+MIGRATIONS_DIR = Path(__file__).parent.parent / "db" / "migrations"
 
 
 # ---------------------------------------------------------------------------
@@ -76,14 +74,17 @@ def integration_engine():
 
 @pytest.fixture(scope="session")
 def migrated_db(integration_engine):
-    """Apply the baseline schema migration, clean-slate, for the test session."""
-    up_sql = _extract_up_sql(MIGRATION_FILE)
-    statements = [s.strip() for s in up_sql.split(";") if s.strip()]
+    """Apply every migration in db/migrations/, in order, clean-slate, for the
+    test session — not just the first one, so later tables (app_settings,
+    scraper_runs, ...) actually exist for tests that need them."""
+    migration_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
 
     with integration_engine.begin() as conn:
         conn.exec_driver_sql("DROP SCHEMA IF EXISTS moneyman CASCADE")
-        for stmt in statements:
-            conn.exec_driver_sql(stmt)
+        for migration_file in migration_files:
+            up_sql = _extract_up_sql(migration_file)
+            for stmt in [s.strip() for s in up_sql.split(";") if s.strip()]:
+                conn.exec_driver_sql(stmt)
 
     yield integration_engine
 

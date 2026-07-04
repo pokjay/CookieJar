@@ -46,7 +46,7 @@ def insert_run_account(run_id: str, account: str, company_id: str) -> None:
     execute_mutation(
         """
         INSERT INTO scraper_run_accounts (run_id, account, company_id, status)
-        VALUES (:run_id::uuid, :account, :company_id, 'pending')
+        VALUES (:run_id ::uuid, :account, :company_id, 'pending')
         """,
         {"run_id": run_id, "account": account, "company_id": company_id},
     )
@@ -69,7 +69,7 @@ def finish_run_account(
         SET status = :status,
             error_type = :error_type,
             transactions_imported = :transactions_imported
-        WHERE run_id = :run_id::uuid
+        WHERE run_id = :run_id ::uuid
           AND account = :account
           AND company_id = :company_id
         """,
@@ -92,7 +92,7 @@ def finish_run(run_id: str, status: str) -> None:
         """
         UPDATE scraper_runs
         SET status = :status, finished_at = now()
-        WHERE id = :run_id::uuid
+        WHERE id = :run_id ::uuid
         """,
         {"run_id": run_id, "status": status},
     )
@@ -124,7 +124,7 @@ _UPSERT_TRANSACTION_SQL = """
         :unique_id, :company_id, :account, :status,
         :activity_date, :charged_amount, :charged_currency,
         :original_amount, :original_currency,
-        :description, :memo, :identifier, :installments::jsonb, :raw::jsonb,
+        :description, :memo, :identifier, :installments ::jsonb, :raw ::jsonb,
         now(), now()
     )
     ON CONFLICT (unique_id) DO NOTHING

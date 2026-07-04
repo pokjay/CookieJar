@@ -39,11 +39,16 @@ def execute_returning(sql: str, params: dict | None = None) -> pd.DataFrame:
     """Run a write statement with a RETURNING clause and commit it.
 
     Unlike run_query (a plain engine.connect(), meant for read-only SELECTs),
-    this wraps engine.begin() so the write is actually committed.
+    this wraps engine.begin() so the write is actually committed. Uses
+    conn.execute() directly rather than pd.read_sql: pandas wraps any
+    DB-level error (e.g. a unique-constraint violation) in
+    pandas.errors.DatabaseError, hiding the underlying SQLAlchemy exception
+    (e.g. IntegrityError) that callers need to catch specifically.
     """
     engine = _get_engine()
     with engine.begin() as conn:
-        return pd.read_sql(text(sql), conn, params=params or {})
+        result = conn.execute(text(sql), params or {})
+        return pd.DataFrame(result.mappings().all())
 
 
 def execute_mutations_batch(sql: str, params_list: list[dict]) -> int:

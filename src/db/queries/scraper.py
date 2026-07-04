@@ -30,7 +30,7 @@ def get_last_run() -> dict | None:
         """
         SELECT account, company_id, status, error_type, transactions_imported
         FROM scraper_run_accounts
-        WHERE run_id = :run_id::uuid
+        WHERE run_id = :run_id ::uuid
         ORDER BY company_id, account
         """,
         {"run_id": run_id},
