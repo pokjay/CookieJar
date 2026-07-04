@@ -17,6 +17,9 @@ on:
     paths:
       - "db/**"
 
+permissions:
+  contents: read
+
 jobs:
   schema-drift:
     name: db/schema.sql matches migrations

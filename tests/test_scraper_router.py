@@ -128,6 +128,25 @@ def test_distinct_forwarded_ips_get_separate_buckets():
         assert exc_info.value.status_code == 401  # not 429
 
 
+def test_rotating_x_forwarded_for_cannot_bypass_the_global_backstop():
+    """X-Forwarded-For is client-influenced, so an attacker can rotate it to
+    land every failed attempt in a fresh bucket. The global cap across all
+    buckets must still stop the brute force."""
+    payload = scraper_router.ListPayload(db_password="wrong")
+    with patch.object(scraper_router, "list_accounts", side_effect=CredentialsError()):
+        for i in range(scraper_router._RATE_MAX_GLOBAL):
+            with pytest.raises(HTTPException) as exc_info:
+                scraper_router.scraper_list_accounts(
+                    payload, _fake_request(forwarded_for=f"6.6.6.{i}")
+                )
+            assert exc_info.value.status_code == 401
+
+        # Next attempt from yet another spoofed IP: global backstop trips.
+        with pytest.raises(HTTPException) as exc_info:
+            scraper_router.scraper_list_accounts(payload, _fake_request(forwarded_for="6.6.99.99"))
+        assert exc_info.value.status_code == 429
+
+
 # ── /sync clears stale runs before checking has_running_run() ──────────────
 
 

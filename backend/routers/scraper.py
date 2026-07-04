@@ -39,6 +39,12 @@ router = APIRouter(prefix="/scraper")
 _rate_limit: dict[str, list[float]] = {}
 _RATE_WINDOW = 60
 _RATE_MAX = 5
+# Global backstop across ALL buckets. The per-client key comes from
+# X-Forwarded-For, which an authenticated client can rotate to spread failed
+# attempts across fresh buckets; capping total failures per window keeps
+# brute force bounded no matter how the key is spoofed (and bounds the
+# number of buckets a spoofer can create).
+_RATE_MAX_GLOBAL = 15
 
 
 def _client_ip(request: Request) -> str:
@@ -70,17 +76,24 @@ def _prune(key: str, now: float) -> list[float]:
     return hits
 
 
+def _total_failed_attempts(now: float) -> int:
+    """Total non-expired failed attempts across all buckets (pruning as it goes)."""
+    return sum(len(_prune(key, now)) for key in list(_rate_limit))
+
+
 def _check_rate_limit(request: Request) -> None:
     """Raise 429 if this client already has _RATE_MAX+ failed vault-password
-    attempts recorded within the last _RATE_WINDOW seconds.
+    attempts within the last _RATE_WINDOW seconds, or _RATE_MAX_GLOBAL+ failed
+    attempts exist across all clients (anti-spoofing backstop).
 
-    This only checks the bucket — it never adds to it. Only
+    This only checks the buckets — it never adds to them. Only
     _record_failed_attempt() (called from each endpoint's wrong-password
-    branch) grows it.
+    branch) grows them.
     """
     key = _client_ip(request)
-    hits = _prune(key, time.monotonic())
-    if len(hits) >= _RATE_MAX:
+    now = time.monotonic()
+    hits = _prune(key, now)
+    if len(hits) >= _RATE_MAX or _total_failed_attempts(now) >= _RATE_MAX_GLOBAL:
         raise HTTPException(status_code=429, detail="Too many vault attempts. Try again later.")
 
 
