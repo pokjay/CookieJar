@@ -1,0 +1,80 @@
+name: Schema check
+
+# Fails when db/schema.sql is out of sync with db/migrations/.
+#
+# Instead of re-running `dbmate dump` and diffing the text (which breaks
+# whenever the pg_dump version that generated the committed file differs from
+# the runner's), this builds two databases — one from the migrations, one from
+# the committed db/schema.sql — and dumps BOTH with the runner's pg_dump.
+# Same pg_dump on both sides means the diff only ever shows real schema drift.
+
+on:
+  pull_request:
+    paths:
+      - "db/**"
+  push:
+    branches: [main]
+    paths:
+      - "db/**"
+
+jobs:
+  schema-drift:
+    name: db/schema.sql matches migrations
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dbmate
+        run: |
+          sudo curl -fsSL -o /usr/local/bin/dbmate \
+            https://github.com/amacneil/dbmate/releases/download/v2.33.0/dbmate-linux-amd64
+          sudo chmod +x /usr/local/bin/dbmate
+
+      - name: Build database from migrations
+        run: |
+          createdb from_migrations
+          # dbmate needs the search_path schema to exist before it can create
+          # its schema_migrations table there.
+          psql -d from_migrations -c 'CREATE SCHEMA IF NOT EXISTS moneyman'
+          DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/from_migrations?sslmode=disable&options=-csearch_path%3Dmoneyman" \
+            dbmate --no-dump-schema up
+
+      - name: Build database from committed db/schema.sql
+        run: |
+          createdb from_schema
+          # \restrict / \unrestrict guard lines are emitted by newer pg_dump
+          # versions and rejected by older psql clients; they don't affect the
+          # schema itself.
+          grep -vE '^\\(un)?restrict' db/schema.sql | psql -v ON_ERROR_STOP=1 -d from_schema
+
+      - name: Compare schemas and migration versions
+        run: |
+          # pg_dump emits \restrict lines with a random per-run token; drop them.
+          dump() { pg_dump --schema-only --no-owner --no-privileges -d "$1" | grep -vE '^\\(un)?restrict'; }
+          versions() { psql -d "$1" -Atc 'SELECT version FROM moneyman.schema_migrations ORDER BY version'; }
+
+          fail=0
+          diff -u <(dump from_schema) <(dump from_migrations) || fail=1
+          diff -u <(versions from_schema) <(versions from_migrations) || fail=1
+
+          if [ "$fail" -ne 0 ]; then
+            echo "::error file=db/schema.sql::db/schema.sql is out of sync with db/migrations/. Apply migrations to a database (e.g. make dev-db) and run 'dbmate dump', then commit the regenerated db/schema.sql."
+            exit 1
+          fi
+          echo "db/schema.sql is in sync with db/migrations/."

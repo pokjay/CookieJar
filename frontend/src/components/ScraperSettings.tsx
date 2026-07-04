@@ -8,28 +8,29 @@ import {
   addScraperAccount,
   updateScraperAccount,
   deleteScraperAccount,
+  ApiError,
 } from "@/lib/api";
 import type { ScraperAccount, ScraperStatus } from "@/lib/types";
+import ConfirmDialog from "@/components/ConfirmDialog";
+
+// Isracard and Amex both authenticate with a national ID + 6-digit card number.
+const ID_CARD6_PASSWORD_FIELDS = [
+  { key: "id", label: "National ID" },
+  { key: "card6Digits", label: "Card 6 Digits" },
+  { key: "password", label: "Password", type: "password" },
+];
+
+// Visa Cal and Max both authenticate with a plain username/password.
+const USERNAME_PASSWORD_FIELDS = [
+  { key: "username", label: "Username" },
+  { key: "password", label: "Password", type: "password" },
+];
 
 const PROVIDER_FIELDS: Record<string, { key: string; label: string; type?: string }[]> = {
-  isracard: [
-    { key: "id", label: "National ID" },
-    { key: "card6Digits", label: "Card 6 Digits" },
-    { key: "password", label: "Password", type: "password" },
-  ],
-  visaCal: [
-    { key: "username", label: "Username" },
-    { key: "password", label: "Password", type: "password" },
-  ],
-  max: [
-    { key: "username", label: "Username" },
-    { key: "password", label: "Password", type: "password" },
-  ],
-  amex: [
-    { key: "id", label: "National ID" },
-    { key: "card6Digits", label: "Card 6 Digits" },
-    { key: "password", label: "Password", type: "password" },
-  ],
+  isracard: ID_CARD6_PASSWORD_FIELDS,
+  visaCal: USERNAME_PASSWORD_FIELDS,
+  max: USERNAME_PASSWORD_FIELDS,
+  amex: ID_CARD6_PASSWORD_FIELDS,
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -224,11 +225,21 @@ export default function ScraperSettings() {
   }, []);
 
   function apiError(e: unknown): string {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (msg.includes("401") || /wrong|unauthorized/i.test(msg)) return "Wrong vault password.";
-    if (msg.includes("404") || /not found/i.test(msg)) return "Vault not found. Initialize it first.";
-    if (msg.includes("409") || /exists/i.test(msg)) return "A vault already exists.";
-    return msg;
+    if (e instanceof ApiError) {
+      switch (e.status) {
+        case 401:
+          return "Wrong vault password.";
+        case 404:
+          return "Vault not found. Initialize it first.";
+        case 409:
+          return "A vault already exists.";
+        case 429:
+          return "Too many failed password attempts. Try again in a minute.";
+        default:
+          return e.message;
+      }
+    }
+    return e instanceof Error ? e.message : String(e);
   }
 
   async function handleInit(pw: string) {
@@ -379,31 +390,17 @@ export default function ScraperSettings() {
         </div>
       )}
       {modal?.kind === "delete" && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setModal(null)} />
-          <div className="relative bg-cj-surface border border-cj-border-strong rounded-xl shadow-2xl max-w-sm w-full p-6 space-y-4">
-            <div>
-              <h3 className="text-base font-semibold text-cj-text">Delete account?</h3>
-              <p className="text-sm text-cj-text-muted mt-1">
-                Remove <strong>{modal.account.title}</strong> from the vault? This cannot be undone.
-              </p>
-            </div>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setModal(null)}
-                className="px-4 py-2 rounded-lg bg-cj-elevated hover:bg-cj-hover text-sm font-medium text-cj-text-3 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleDelete(modal.account.uuid)}
-                className="px-4 py-2 rounded-lg bg-red-700 hover:bg-red-600 text-sm font-medium text-white transition-colors"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title="Delete account?"
+          description={
+            <>
+              Remove <strong>{modal.account.title}</strong> from the vault? This cannot be undone.
+            </>
+          }
+          confirmLabel="Delete"
+          onConfirm={() => handleDelete(modal.account.uuid)}
+          onCancel={() => setModal(null)}
+        />
       )}
 
       {/* Feedback */}

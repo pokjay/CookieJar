@@ -1,6 +1,5 @@
 """Scraper REST endpoints — bank credential vault + sync trigger."""
 
-import collections
 import time
 from typing import Any
 
@@ -23,26 +22,75 @@ from backend.scraper_keepass import (
 )
 from backend.scraper_sync import run_sync
 from src.db.connection import is_mock_mode
-from src.db.mutations.scraper import RunAlreadyRunningError, insert_run
+from src.db.mutations.scraper import RunAlreadyRunningError, insert_run, mark_stale_runs
 from src.db.queries.scraper import get_last_run, has_running_run
 
 router = APIRouter(prefix="/scraper")
 
-# Simple in-memory rate limiter: max 5 vault-opens per 60 s per client IP.
-# Works under single-worker uvicorn (as documented). Not distributed-safe.
-_rate_limit: dict[str, list[float]] = collections.defaultdict(list)
+# Simple in-memory rate limiter: max 5 *failed* vault-password attempts per
+# 60 s per client. Works under single-worker uvicorn (as documented). Not
+# distributed-safe.
+#
+# Only failures count — a correct password never spends the budget, since a
+# single user action (e.g. adding an account) fires multiple successful
+# requests (the mutation + a list refresh) that would otherwise trip the
+# limiter mid-setup. This keeps the limiter doing its actual job: slowing
+# down brute-force password guessing, not penalizing normal use.
+_rate_limit: dict[str, list[float]] = {}
 _RATE_WINDOW = 60
 _RATE_MAX = 5
 
 
+def _client_ip(request: Request) -> str:
+    """Resolve the rate-limit bucket key for this request.
+
+    All browser traffic reaches this API via the Next.js server-side proxy
+    (frontend/src/app/api/[...proxy]/route.ts), so request.client.host is
+    always the frontend container's IP, not the real client's. The proxy
+    forwards the real client IP via X-Forwarded-For; prefer its first hop
+    when present and fall back to request.client.host otherwise.
+    """
+    headers = getattr(request, "headers", None)
+    forwarded = headers.get("x-forwarded-for") if headers is not None else None
+    if forwarded:
+        first = forwarded.split(",")[0].strip()
+        if first:
+            return first
+    return request.client.host if request.client else "unknown"
+
+
+def _prune(key: str, now: float) -> list[float]:
+    """Return key's non-expired hit timestamps, dropping the bucket entirely
+    once it's empty so the dict doesn't grow unboundedly."""
+    hits = [t for t in _rate_limit.get(key, []) if now - t < _RATE_WINDOW]
+    if hits:
+        _rate_limit[key] = hits
+    else:
+        _rate_limit.pop(key, None)
+    return hits
+
+
 def _check_rate_limit(request: Request) -> None:
-    client = request.client.host if request.client else "unknown"
-    now = time.monotonic()
-    hits = [t for t in _rate_limit[client] if now - t < _RATE_WINDOW]
+    """Raise 429 if this client already has _RATE_MAX+ failed vault-password
+    attempts recorded within the last _RATE_WINDOW seconds.
+
+    This only checks the bucket — it never adds to it. Only
+    _record_failed_attempt() (called from each endpoint's wrong-password
+    branch) grows it.
+    """
+    key = _client_ip(request)
+    hits = _prune(key, time.monotonic())
     if len(hits) >= _RATE_MAX:
         raise HTTPException(status_code=429, detail="Too many vault attempts. Try again later.")
+
+
+def _record_failed_attempt(request: Request) -> None:
+    """Record a failed vault-password attempt against the rate-limit bucket."""
+    key = _client_ip(request)
+    now = time.monotonic()
+    hits = _prune(key, now)
     hits.append(now)
-    _rate_limit[client] = hits
+    _rate_limit[key] = hits
 
 
 def _mock_guard() -> None:
@@ -51,19 +99,8 @@ def _mock_guard() -> None:
         raise HTTPException(status_code=503, detail="Sync unavailable in mock mode.")
 
 
-def _vault_open_or_404(db_password: str) -> None:
-    """Attempt to open the vault — raises 401 on wrong password, 404 if missing."""
-    try:
-        from backend.scraper_keepass import _open, _vault_lock
-        with _vault_lock:
-            _open(db_password)
-    except VaultNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except CredentialsError as exc:
-        raise HTTPException(status_code=401, detail="Wrong vault password.") from exc
-
-
 # ── Models ────────────────────────────────────────────────────────────────────
+
 
 class InitPayload(BaseModel):
     db_password: SecretStr
@@ -98,6 +135,7 @@ class SyncPayload(BaseModel):
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+
 @router.post("/init")
 def scraper_init(payload: InitPayload, request: Request) -> dict:
     _check_rate_limit(request)
@@ -116,6 +154,7 @@ def scraper_list_accounts(payload: ListPayload, request: Request) -> list[dict]:
     except VaultNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CredentialsError:
+        _record_failed_attempt(request)
         raise HTTPException(status_code=401, detail="Wrong vault password.")
 
 
@@ -132,6 +171,7 @@ def scraper_add_account(payload: AddAccountPayload, request: Request) -> dict:
     except VaultNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CredentialsError:
+        _record_failed_attempt(request)
         raise HTTPException(status_code=401, detail="Wrong vault password.")
     except UnknownProviderError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -152,6 +192,7 @@ def scraper_update_account(uuid: str, payload: UpdateAccountPayload, request: Re
     except VaultNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CredentialsError:
+        _record_failed_attempt(request)
         raise HTTPException(status_code=401, detail="Wrong vault password.")
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Account {uuid} not found.")
@@ -168,6 +209,7 @@ def scraper_delete_account(uuid: str, payload: DeleteAccountPayload, request: Re
     except VaultNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CredentialsError:
+        _record_failed_attempt(request)
         raise HTTPException(status_code=401, detail="Wrong vault password.")
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Account {uuid} not found.")
@@ -183,6 +225,11 @@ def scraper_sync(
     _mock_guard()
     _check_rate_limit(request)
 
+    # Clear any stale 'running' row (crashed/killed previous run) at trigger
+    # time, not just at boot — otherwise a stuck run blocks every /sync with
+    # 409 until the backend happens to restart.
+    mark_stale_runs()
+
     if has_running_run():
         raise HTTPException(status_code=409, detail="A sync is already running.")
 
@@ -193,6 +240,7 @@ def scraper_sync(
     except VaultNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CredentialsError:
+        _record_failed_attempt(request)
         raise HTTPException(status_code=401, detail="Wrong vault password.")
 
     if not credentials:
