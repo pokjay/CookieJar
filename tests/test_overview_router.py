@@ -2,6 +2,8 @@
 
 import os
 
+import pytest
+
 os.environ.setdefault("USE_MOCK_DATA", "true")
 
 from backend.routers.overview import (  # noqa: E402
@@ -21,7 +23,9 @@ def test_summary_shape():
     assert set(result["by_person"]) == {"Gomez", "Morticia"}
     assert result["persons"] == ["Gomez", "Morticia"]
     assert result["available_years"] == [2022, 2023, 2024, 2025]
-    assert sum(result["by_person"].values()) == result["total"]
+    # Per-person totals must reconcile to the grand total (approx: float summation
+    # over many 2-decimal balances isn't associative).
+    assert sum(result["by_person"].values()) == pytest.approx(result["total"])
 
 
 def test_yoy_change_includes_overall():

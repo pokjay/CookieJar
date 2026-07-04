@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.4](https://github.com/pokjay/CookieJar/compare/v0.5.3...v0.5.4) (2026-06-27)
+
+
+### Bug Fixes
+
+* **frontend:** stop clipping income/expense bar labels ([#92](https://github.com/pokjay/CookieJar/issues/92)) ([#93](https://github.com/pokjay/CookieJar/issues/93)) ([b85ac7c](https://github.com/pokjay/CookieJar/commit/b85ac7c49ba71a249e5f2336e089e0bf57fdc6ca))
+
+## [0.5.3](https://github.com/pokjay/CookieJar/compare/v0.5.2...v0.5.3) (2026-06-26)
+
+
+### Bug Fixes
+
+* **overview:** correct ~50% inflation in Net Worth by Category Over Time ([#86](https://github.com/pokjay/CookieJar/issues/86)) ([8eedbba](https://github.com/pokjay/CookieJar/commit/8eedbba723f80d9535f01a7ff73174e491e8f699))
+
+## [0.5.2](https://github.com/pokjay/CookieJar/compare/v0.5.1...v0.5.2) (2026-06-19)
+
+
+### Bug Fixes
+
+* **investments:** sanitize NaN pandas values in nullable string fields ([#82](https://github.com/pokjay/CookieJar/issues/82)) ([0ed2090](https://github.com/pokjay/CookieJar/commit/0ed20902dfdd2d2489cd58e429360c335cfeab3e))
+
 ## [0.5.1](https://github.com/pokjay/CookieJar/compare/v0.5.0...v0.5.1) (2026-06-11)
 
 

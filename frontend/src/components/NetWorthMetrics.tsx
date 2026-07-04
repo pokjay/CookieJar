@@ -1,6 +1,5 @@
 "use client";
 
-import { Card } from "@tremor/react";
 import { formatCurrencyFull, formatDelta } from "@/lib/formatting";
 import type { YoyChange } from "@/lib/types";
 
@@ -36,7 +35,7 @@ export default function NetWorthMetrics({
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       <div data-testid="metric-total">
-        <Card className="bg-cj-surface border-cj-border ring-0">
+        <div className="bg-cj-surface border border-cj-border rounded-xl p-6">
           <p className="text-sm text-cj-text-muted">Total Net Worth</p>
           <p data-testid="metric-total-value" className="text-2xl font-bold text-cj-text mt-1">
             {formatCurrencyFull(total)}
@@ -45,11 +44,11 @@ export default function NetWorthMetrics({
             <span data-testid="delta-Overall"><DeltaBadge value={yoyChange["Overall"] ?? null} /></span>
             <span className="text-xs text-cj-text-faint ml-2">YoY</span>
           </div>
-        </Card>
+        </div>
       </div>
       {Object.entries(byPerson).map(([person, amount]) => (
         <div key={person} data-testid={`metric-${person}`}>
-          <Card className="bg-cj-surface border-cj-border ring-0">
+          <div className="bg-cj-surface border border-cj-border rounded-xl p-6">
             <p className="text-sm text-cj-text-muted">{person}</p>
             <p data-testid={`metric-${person}-value`} className="text-2xl font-bold text-cj-text mt-1">
               {formatCurrencyFull(amount)}
@@ -58,7 +57,7 @@ export default function NetWorthMetrics({
               <span data-testid={`delta-${person}`}><DeltaBadge value={yoyChange[person] ?? null} /></span>
               <span className="text-xs text-cj-text-faint ml-2">YoY</span>
             </div>
-          </Card>
+          </div>
         </div>
       ))}
     </div>

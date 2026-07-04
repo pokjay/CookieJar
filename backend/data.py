@@ -48,10 +48,13 @@ def get_investment_accounts_with_latest() -> pd.DataFrame:
             .last()
             .reset_index()[["investment_accounts_id", "amount", "activity_date"]]
         )
-        merged = accounts.merge(
-            latest, left_on="id", right_on="investment_accounts_id", how="left"
-        )
+        merged = accounts.merge(latest, left_on="id", right_on="investment_accounts_id", how="left")
         merged["latest_amount"] = merged["amount"].fillna(0)
+        # A closed account's current balance is 0 (money moved out). Mirror the
+        # real-mode lateral join's ``is_active = TRUE`` filter so the summary card
+        # doesn't count stale closed-account balances.
+        if "is_active" in merged.columns:
+            merged.loc[~merged["is_active"], "latest_amount"] = 0
         merged["latest_date"] = merged["activity_date"]
         return merged.drop(columns=["amount", "activity_date", "investment_accounts_id"])
 
@@ -68,7 +71,9 @@ def get_investment_accounts_with_latest() -> pd.DataFrame:
     """)
 
 
-def forward_fill_account_balances(tracking: pd.DataFrame) -> pd.DataFrame:
+def forward_fill_account_balances(
+    tracking: pd.DataFrame, inactive_ids: frozenset[int] = frozenset()
+) -> pd.DataFrame:
     """Carry each account's last known balance across the union of tracking dates.
 
     Different accounts often get tracked on different dates (e.g. moneyman scrapes
@@ -76,13 +81,18 @@ def forward_fill_account_balances(tracking: pd.DataFrame) -> pd.DataFrame:
     accounts that weren't scraped that day, which appears as dips in the net-worth
     chart. Forward-filling per account before aggregating avoids that.
 
+    Closed accounts (``inactive_ids``) are a special case: "no recent data" means
+    the account was emptied/replaced, not "balance unchanged". Carrying their last
+    balance forever double-counts money that moved into another account (often in
+    the same category — a provider switch). So inactive accounts are forward-filled
+    only to fill gaps *between* their own records, never extrapolated past their
+    final record; after that they drop off entirely.
+
     Returns long-form (activity_date, investment_accounts_id, amount) with one row
     per (date, account) where the account has any tracking record up to that date.
     """
     if tracking.empty:
-        return pd.DataFrame(
-            columns=["activity_date", "investment_accounts_id", "amount"]
-        )
+        return pd.DataFrame(columns=["activity_date", "investment_accounts_id", "amount"])
 
     sort_cols = ["activity_date", "investment_accounts_id"]
     if "id" in tracking.columns:
@@ -104,7 +114,25 @@ def forward_fill_account_balances(tracking: pd.DataFrame) -> pd.DataFrame:
         var_name="investment_accounts_id",
         value_name="amount",
     )
-    return long.dropna(subset=["amount"]).reset_index(drop=True)
+    long = long.dropna(subset=["amount"])
+
+    if inactive_ids:
+        # Don't extrapolate a closed account's balance past its last real record.
+        last_real = tracking.groupby("investment_accounts_id")["activity_date"].max()
+        is_inactive = long["investment_accounts_id"].isin(inactive_ids)
+        beyond = is_inactive & (
+            long["activity_date"] > long["investment_accounts_id"].map(last_real)
+        )
+        long = long[~beyond]
+
+    return long.reset_index(drop=True)
+
+
+def _inactive_account_ids(accounts: pd.DataFrame) -> frozenset[int]:
+    """IDs of accounts flagged inactive (closed). Empty if the column is absent."""
+    if "is_active" not in accounts.columns:
+        return frozenset()
+    return frozenset(accounts.loc[~accounts["is_active"], "id"])
 
 
 def get_net_worth_over_time() -> pd.DataFrame:
@@ -112,7 +140,7 @@ def get_net_worth_over_time() -> pd.DataFrame:
         accounts = get_investment_accounts()
         tracking = get_investment_tracking()
     else:
-        accounts = run_query("SELECT id, person FROM investment_accounts")
+        accounts = run_query("SELECT id, person, is_active FROM investment_accounts")
         tracking = run_query(
             "SELECT id, investment_accounts_id, activity_date, amount "
             "FROM investment_accounts_tracking "
@@ -120,7 +148,7 @@ def get_net_worth_over_time() -> pd.DataFrame:
         )
         tracking["activity_date"] = pd.to_datetime(tracking["activity_date"])
 
-    filled = forward_fill_account_balances(tracking)
+    filled = forward_fill_account_balances(tracking, _inactive_account_ids(accounts))
     if filled.empty:
         return pd.DataFrame(columns=["activity_date", "person", "total_amount"])
 
@@ -144,7 +172,7 @@ def get_net_worth_by_category_over_time() -> pd.DataFrame:
         tracking = get_investment_tracking()
     else:
         accounts = run_query(
-            "SELECT id, person, account_type_category FROM investment_accounts"
+            "SELECT id, person, account_type_category, is_active FROM investment_accounts"
         )
         tracking = run_query(
             "SELECT id, investment_accounts_id, activity_date, amount "
@@ -153,7 +181,7 @@ def get_net_worth_by_category_over_time() -> pd.DataFrame:
         )
         tracking["activity_date"] = pd.to_datetime(tracking["activity_date"])
 
-    filled = forward_fill_account_balances(tracking)
+    filled = forward_fill_account_balances(tracking, _inactive_account_ids(accounts))
     if filled.empty:
         return pd.DataFrame(
             columns=["activity_date", "person", "account_type_category", "total_amount"]

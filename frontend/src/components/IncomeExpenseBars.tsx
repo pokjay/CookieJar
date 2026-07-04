@@ -47,7 +47,7 @@ export default function IncomeExpenseBars({
         Avg Monthly Income & Expense ({year})
       </h3>
       <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={data} barCategoryGap="30%">
+        <BarChart data={data} barCategoryGap="30%" margin={{ top: 24, right: 0, bottom: 0, left: 0 }}>
           <XAxis
             dataKey="name"
             tick={{ fill: colors.axis, fontSize: 12 }}
@@ -59,6 +59,7 @@ export default function IncomeExpenseBars({
             axisLine={false}
             tickLine={false}
             tickFormatter={(v: number) => formatCurrency(v)}
+            domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.15)]}
           />
           <Tooltip content={<CustomTooltip />} cursor={false} />
           <Bar

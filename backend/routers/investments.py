@@ -48,6 +48,14 @@ def _safe_float(v) -> Optional[float]:
         return None
 
 
+def _safe_str(v) -> Optional[str]:
+    if v is None:
+        return None
+    if isinstance(v, float) and math.isnan(v):
+        return None
+    return str(v) if v else None
+
+
 def _safe_date(v) -> Optional[str]:
     if v is None or (isinstance(v, float) and math.isnan(v)):
         return None
@@ -67,14 +75,14 @@ def _row_to_dict(row: pd.Series) -> dict:
         "company": row["company"],
         "account_type": account_type,
         "account_type_en": ACCOUNT_TYPE_MAP.get(account_type, account_type),
-        "account_type_category": row.get("account_type_category"),
+        "account_type_category": _safe_str(row.get("account_type_category")),
         "is_active": bool(row.get("is_active", True)),
         "is_pension": bool(row.get("is_pension", False)),
         "deposit_management_fees": _safe_float(row.get("deposit_management_fees")),
         "acc_management_fees": _safe_float(row.get("acc_management_fees")),
-        "investment_track": row.get("investment_track"),
+        "investment_track": _safe_str(row.get("investment_track")),
         "monthly_deposit": _safe_float(row.get("monthly_deposit")),
-        "account_number": row.get("account_number"),
+        "account_number": _safe_str(row.get("account_number")),
         "latest_amount": _safe_float(row.get("latest_amount")),
         "last_updated": _safe_date(row.get("latest_date")),
     }

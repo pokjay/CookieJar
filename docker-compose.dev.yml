@@ -1,6 +1,7 @@
 # Dev overlay — use with: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 # Builds images from source and mounts source code for hot-reload.
-# New dependencies (pip/npm) still require --build.
+# New dependencies (pip/npm) require `make dev-rebuild` — a plain --build reuses
+# the stale anonymous node_modules volume below.
 services:
   backend:
     build:

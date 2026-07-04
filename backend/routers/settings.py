@@ -4,8 +4,8 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from backend.cache import ttl_cached
+from backend.data import get_distinct_persons
 from src.db.connection import execute_mutation, is_mock_mode
-from src.db.queries.investments import get_distinct_persons
 from src.db.queries.transactions import get_distinct_accounts
 from src.settings import load_settings, save_settings
 

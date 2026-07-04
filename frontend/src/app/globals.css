@@ -1,6 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../../tailwind.config.ts";
 
 /* ─── CookieJar design tokens (RGB triplets for Tailwind opacity modifiers) ── */
 
@@ -54,11 +53,13 @@ body {
   font-family: "Inter", system-ui, -apple-system, sans-serif;
 }
 
-/* ─── Tremor overrides ──────────────────────────────────────────────────── */
-
-.dark .tremor-Card-root {
-  --tremor-background-default: #111827 !important;
-  --tremor-border-default: #1f2937 !important;
+/* Tailwind v4 preflight defaults buttons to `cursor: default`; restore the
+   pointer on interactive (non-disabled) controls as in v3. */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
 /* ─── Scrollbar ─────────────────────────────────────────────────────────── */
