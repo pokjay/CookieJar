@@ -11,6 +11,17 @@
 # Not using a public domain? See the Tailscale alternative documented in
 # .env.example instead — no ports/domain/cert management needed.
 services:
+  # Compose merges port lists additively, so without this override the base
+  # file's "3001:3000" mapping would stay published on all interfaces — plain
+  # HTTP that bypasses Caddy's TLS entirely. Rebind it to loopback so the app
+  # is only reachable from outside via HTTPS (the host itself keeps
+  # localhost:3001 for debugging). The !override tag needs docker compose
+  # v2.24.4+; on older versions, comment out the ports mapping in
+  # docker-compose.yml instead.
+  frontend:
+    ports: !override
+      - "127.0.0.1:3001:3000"
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
