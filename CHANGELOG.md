@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here.
 
+## [0.6.0](https://github.com/pokjay/CookieJar/compare/v0.5.4...v0.6.0) (2026-07-06)
+
+
+### Features
+
+* credit card transaction fetching via KeePass vault + scraper sidecar ([#102](https://github.com/pokjay/CookieJar/issues/102)) ([d065dd8](https://github.com/pokjay/CookieJar/commit/d065dd80deabecd602822c7a13e331eabb7c6129)), closes [#101](https://github.com/pokjay/CookieJar/issues/101)
+
+
+### Documentation
+
+* **readme:** document the built-in bank sync feature ([#105](https://github.com/pokjay/CookieJar/issues/105)) ([0bf2589](https://github.com/pokjay/CookieJar/commit/0bf25896061fbe3763922c862f69869f8bbe6c4c))
+
 ## [0.5.4](https://github.com/pokjay/CookieJar/compare/v0.5.3...v0.5.4) (2026-06-27)
 
 
