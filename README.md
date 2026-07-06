@@ -126,8 +126,8 @@ DATABASE_URL=postgresql://user:pass@host:5432/dbname?options=-csearch_path%3Dmon
 
 CookieJar reads from a PostgreSQL `transactions` table and doesn't care how data gets there:
 
-- **Built-in bank sync** — connect Israeli credit card accounts (Isracard, Visa Cal, Max, American Express) under **Settings → Bank Accounts**, then pull transactions on demand with the **Sync Now** button. Credentials are stored in a dedicated password-protected [KeePass](https://keepass.info) vault — never in the database — and the vault password is required for every sync, so there is no unattended scheduling by design. The vault file can also be opened in KeePassXC for manual management. See the security notes in [`.env.example`](.env.example) before enabling this on your network.
-- **[moneyman](https://github.com/daniel-hauser/moneyman)** — external scheduled scraping supporting a wider range of Israeli banks and cards, writing into the same table. Both scrapers use the same transaction IDs, so imports deduplicate against each other.
+- **Built-in bank sync** — powered by the excellent [israeli-bank-scrapers](https://github.com/eshaham/israeli-bank-scrapers) library: connect Israeli credit card accounts (Isracard, Visa Cal, Max, American Express) under **Settings → Bank Accounts**, then pull transactions on demand with the **Sync Now** button. Credentials are stored in a dedicated password-protected [KeePass](https://keepass.info) vault — never in the database — and the vault password is required for every sync, so there is no unattended scheduling by design. The vault file can also be opened in KeePassXC for manual management. See the security notes in [`.env.example`](.env.example) before enabling this on your network.
+- **[moneyman](https://github.com/daniel-hauser/moneyman)** — external scheduled scraping built on the same israeli-bank-scrapers library, supporting a wider range of Israeli banks and cards and writing into the same table. Both produce the same transaction IDs, so imports deduplicate against each other.
 - **CSV import & manual entry** — through the app's Manual Transactions page.
 
 ---
