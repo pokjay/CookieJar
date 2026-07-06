@@ -2,6 +2,11 @@
 # Use when you need to test local changes without hot-reload (e.g. CI e2e):
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml up --build
 services:
+  scraper:
+    build:
+      context: ./scraper
+      dockerfile: Dockerfile
+
   backend:
     build:
       context: .

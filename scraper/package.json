@@ -1,0 +1,17 @@
+{
+  "name": "cookiejar-scraper",
+  "version": "1.0.0",
+  "description": "Bank transaction scraper sidecar for CookieJar",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "israeli-bank-scrapers": "^4.5.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

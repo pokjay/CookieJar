@@ -35,6 +35,7 @@ services:
     environment:
       USE_MOCK_DATA: "false"
       DATABASE_URL: "postgresql://postgres:postgres@db:5432/family_finance?options=-csearch_path%3Dmoneyman&sslmode=disable"
+      SCRAPER_TZ: ${SCRAPER_TZ:-Asia/Jerusalem}
     depends_on:
       db-seed:
         condition: service_completed_successfully

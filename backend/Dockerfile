@@ -2,7 +2,8 @@ FROM ghcr.io/amacneil/dbmate:2 AS dbmate
 
 FROM python:3.12.9-slim
 
-RUN adduser --disabled-password --gecos '' --uid 1000 appuser
+RUN adduser --disabled-password --gecos '' --uid 1000 appuser && \
+    mkdir -p /data/keepass && chown appuser:appuser /data/keepass
 
 WORKDIR /app
 

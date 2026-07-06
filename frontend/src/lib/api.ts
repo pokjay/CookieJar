@@ -37,6 +37,11 @@ import type {
   UnmappedBusinessDescription,
   UnmappedBusinessTransaction,
   BusinessMappingItem,
+  ScraperAccount,
+  ScraperStatus,
+  ScraperSyncPayload,
+  ScraperAddAccountPayload,
+  ScraperUpdateAccountPayload,
 } from "./types";
 
 // Empty string = relative URL; Next.js rewrites proxy /api/* to the backend.
@@ -432,4 +437,79 @@ export function resetBusinessMappings(): Promise<{ ok: boolean; deleted: number 
     if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
     return res.json() as Promise<{ ok: boolean; deleted: number }>;
   });
+}
+
+// --- Scraper ---
+
+/**
+ * Thrown by requestJson (and its postJson wrapper) whenever the backend
+ * responds with a non-2xx status. Carries the numeric HTTP status so
+ * callers can branch on it instead of pattern-matching the message text.
+ */
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+async function requestJson<T>(
+  method: string,
+  path: string,
+  body?: unknown
+): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new ApiError(
+      res.status,
+      (detail as { detail?: string }).detail ?? `API error: ${res.status}`
+    );
+  }
+  return res.json() as Promise<T>;
+}
+
+function postJson<T>(path: string, body: unknown): Promise<T> {
+  return requestJson<T>("POST", path, body);
+}
+
+export function getScraperStatus(): Promise<ScraperStatus> {
+  return fetchJson("/api/scraper/status");
+}
+
+export function initVault(db_password: string): Promise<{ ok: boolean }> {
+  return postJson("/api/scraper/init", { db_password });
+}
+
+export function listScraperAccounts(db_password: string): Promise<ScraperAccount[]> {
+  return postJson("/api/scraper/accounts/list", { db_password });
+}
+
+export function addScraperAccount(payload: ScraperAddAccountPayload): Promise<{ ok: boolean; uuid: string }> {
+  return postJson("/api/scraper/accounts", payload);
+}
+
+export function updateScraperAccount(
+  uuid: string,
+  payload: ScraperUpdateAccountPayload
+): Promise<{ ok: boolean }> {
+  return requestJson("PUT", `/api/scraper/accounts/${uuid}`, payload);
+}
+
+export function deleteScraperAccount(
+  uuid: string,
+  db_password: string
+): Promise<{ ok: boolean }> {
+  return requestJson("DELETE", `/api/scraper/accounts/${uuid}`, { db_password });
+}
+
+export function triggerSync(payload: ScraperSyncPayload): Promise<{ run_id: string }> {
+  return postJson("/api/scraper/sync", payload);
 }

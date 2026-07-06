@@ -1,0 +1,44 @@
+# TLS overlay — puts Caddy in front of the frontend to terminate HTTPS with an
+# automatic Let's Encrypt certificate. Requires a domain's DNS pointed at this
+# host (ports 80 and 443 reachable from the internet for the ACME challenge).
+#
+# Setup:
+#   cp Caddyfile.example Caddyfile   # then edit the domain inside
+#   docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+#
+# Set NEXTAUTH_URL in .env to https://your-domain.example.com to match.
+#
+# Not using a public domain? See the Tailscale alternative documented in
+# .env.example instead — no ports/domain/cert management needed.
+services:
+  # Compose merges port lists additively, so without this override the base
+  # file's "3001:3000" mapping would stay published on all interfaces — plain
+  # HTTP that bypasses Caddy's TLS entirely. Rebind it to loopback so the app
+  # is only reachable from outside via HTTPS (the host itself keeps
+  # localhost:3001 for debugging). The !override tag needs docker compose
+  # v2.24.4+; on older versions, comment out the ports mapping in
+  # docker-compose.yml instead.
+  frontend:
+    ports: !override
+      - "127.0.0.1:3001:3000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - internal
+    depends_on:
+      frontend:
+        condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:
