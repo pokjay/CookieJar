@@ -50,7 +50,7 @@
 Most personal finance tools are cloud-based, subscription-gated, and built for a single person. CookieJar is none of those things.
 
 - **Family-first** — net worth, cash flow, and spending are tracked per family member, with household rollups alongside individual views
-- **Flexible data ingestion** — works great with [moneyman](https://github.com/daniel-hauser/moneyman) for automatic Israeli bank and credit card imports, or ingest data any other way (CSV imports, manual entry) — CookieJar just reads from PostgreSQL
+- **Flexible data ingestion** — built-in on-demand credit card sync, [moneyman](https://github.com/daniel-hauser/moneyman) for scheduled Israeli bank and credit card imports, or ingest data any other way (CSV imports, manual entry) — CookieJar just reads from PostgreSQL
 - **Self-hosted, no cloud** — your financial data never leaves your machine
 - **No subscription** — runs on a single `make up`
 
@@ -58,6 +58,7 @@ Most personal finance tools are cloud-based, subscription-gated, and built for a
 
 ## Features
 
+- **Bank Sync** — pull credit card transactions on demand from Israeli providers (Isracard, Visa Cal, Max, Amex); credentials live in a password-protected KeePass vault, unlocked per sync
 - **Overview** — total and per-person net worth with year-over-year delta, asset allocation, and average monthly income vs. expenses
 - **Cash Flow** — monthly income, expenses, and savings broken down per person and as a household
 - **Investments** — investment account balances and performance tracking
@@ -121,9 +122,13 @@ DATABASE_URL=postgresql://user:pass@host:5432/dbname?options=-csearch_path%3Dmon
 
 ---
 
-## Data source
+## Data sources
 
-CookieJar reads from a PostgreSQL `transactions` table and doesn't care how data gets there. The recommended path is [moneyman](https://github.com/daniel-hauser/moneyman), which automatically scrapes Israeli bank and credit card accounts and writes into that table. Alternatively, import CSVs or add entries manually through the app.
+CookieJar reads from a PostgreSQL `transactions` table and doesn't care how data gets there:
+
+- **Built-in bank sync** — connect Israeli credit card accounts (Isracard, Visa Cal, Max, American Express) under **Settings → Bank Accounts**, then pull transactions on demand with the **Sync Now** button. Credentials are stored in a dedicated password-protected [KeePass](https://keepass.info) vault — never in the database — and the vault password is required for every sync, so there is no unattended scheduling by design. The vault file can also be opened in KeePassXC for manual management. See the security notes in [`.env.example`](.env.example) before enabling this on your network.
+- **[moneyman](https://github.com/daniel-hauser/moneyman)** — external scheduled scraping supporting a wider range of Israeli banks and cards, writing into the same table. Both scrapers use the same transaction IDs, so imports deduplicate against each other.
+- **CSV import & manual entry** — through the app's Manual Transactions page.
 
 ---
 
@@ -171,6 +176,7 @@ CI runs on every push and pull request via `.github/workflows/e2e.yml`.
 ```
 frontend/          Next.js app (Tremor + Recharts + next-auth)
 backend/           FastAPI backend (data layer + REST endpoints)
+scraper/           Node.js bank-sync sidecar (israeli-bank-scrapers + Puppeteer)
 e2e/               Playwright tests
 db/
   migrations/      Schema migrations (dbmate)
