@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@radix-ui/react-slider": "^1.2.3",
+    "@radix-ui/react-slider": "^1.4.2",
     "@tanstack/react-table": "^8.21.3",
     "echarts": "^5.6.0",
     "echarts-for-react": "^3.0.2",
