@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "express": "^4.19.2",
-    "israeli-bank-scrapers": "^4.5.0"
+    "israeli-bank-scrapers": "^6.8.0"
   },
   "engines": {
     "node": ">=20"

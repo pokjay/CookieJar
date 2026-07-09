@@ -15,6 +15,31 @@ const SAFE_ERROR_TYPES = new Set([
   "generic-error",
 ]);
 
+// Banks (notably Cal) sit behind anti-bot WAFs that reject a vanilla headless
+// browser outright ("Request Rejected"). israeli-bank-scrapers only supplies the
+// scraping logic — it launches a plain headless Chromium and does no fingerprint
+// hardening, so we apply moneyman's approach via the library's `preparePage` hook:
+// present a real desktop User-Agent and mask the obvious automation signals
+// before the page navigates. Using `preparePage` (an awaited ScraperOptions hook)
+// rather than a browser-level event listener guarantees the patches are in place
+// before the first navigation, avoiding a race.
+async function preparePage(page) {
+  // Derive the real Chrome version so this survives Chromium upgrades, but
+  // present a Windows UA — a Linux/HeadlessChrome UA is what Cal's WAF flags.
+  const version =
+    (String(await page.browser().version()).match(/Chrome\/([\d.]+)/) || [])[1] || "148.0.0.0";
+  await page.setUserAgent(
+    `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version} Safari/537.36`,
+  );
+  await page.setExtraHTTPHeaders({ "accept-language": "he-IL,he;q=0.9,en;q=0.8" });
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+    Object.defineProperty(navigator, "language", { get: () => "he-IL" });
+    Object.defineProperty(navigator, "languages", { get: () => ["he-IL", "he", "en"] });
+    Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
+  });
+}
+
 function classifyError(err) {
   if (!err) return "unknown";
   const msg = String(err.message || err).toLowerCase();
@@ -60,12 +85,17 @@ app.post("/scrape", authMiddleware, async (req, res) => {
       startDate: new Date(startDate),
       combineInstallments: false,
       showBrowser: false,
+      navigationRetryCount: 3,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
         "--disable-gpu",
+        // Drop the automation blink feature the WAF fingerprints.
+        "--disable-blink-features=AutomationControlled",
+        "--lang=he-IL",
       ],
+      preparePage,
     });
   } catch (err) {
     console.error(`[scrape ${companyId}] createScraper failed:`, err);
