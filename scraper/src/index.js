@@ -68,6 +68,7 @@ app.post("/scrape", authMiddleware, async (req, res) => {
       ],
     });
   } catch (err) {
+    console.error(`[scrape ${companyId}] createScraper failed:`, err);
     return res.status(400).json({ errorType: "generic-error", transactions: [] });
   }
 
@@ -76,6 +77,7 @@ app.post("/scrape", authMiddleware, async (req, res) => {
     result = await scraper.scrape(credentials);
   } catch (err) {
     const errorType = classifyError(err);
+    console.error(`[scrape ${companyId}] scrape threw (${errorType}):`, err);
     return res.json({ errorType, transactions: [], accountNumber: null });
   }
 
@@ -83,6 +85,9 @@ app.post("/scrape", authMiddleware, async (req, res) => {
     const errorType = SAFE_ERROR_TYPES.has(result.errorType)
       ? result.errorType
       : "generic-error";
+    console.error(
+      `[scrape ${companyId}] scrape unsuccessful (errorType=${result.errorType}, errorMessage=${result.errorMessage}) → reported as ${errorType}`,
+    );
     return res.json({ errorType, transactions: [], accountNumber: null });
   }
 
