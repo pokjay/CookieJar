@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.7.0](https://github.com/pokjay/CookieJar/compare/v0.6.0...v0.7.0) (2026-07-09)
+
+
+### Features
+
+* make bank sync work end-to-end — wire in sync button + fix scraper ([#108](https://github.com/pokjay/CookieJar/issues/108)) ([#109](https://github.com/pokjay/CookieJar/issues/109)) ([787ce01](https://github.com/pokjay/CookieJar/commit/787ce01012c3a06205a704224f71219f28e153c6))
+
 ## [0.6.0](https://github.com/pokjay/CookieJar/compare/v0.5.4...v0.6.0) (2026-07-06)
 
 
