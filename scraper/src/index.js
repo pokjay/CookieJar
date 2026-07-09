@@ -75,6 +75,11 @@ app.post("/scrape", authMiddleware, async (req, res) => {
     return res.status(400).json({ errorType: "generic-error", transactions: [] });
   }
 
+  const start = new Date(startDate);
+  if (Number.isNaN(start.getTime())) {
+    return res.status(400).json({ errorType: "generic-error", transactions: [] });
+  }
+
   const companyId = account.companyId;
   const credentials = account.credentials;
 
@@ -82,7 +87,7 @@ app.post("/scrape", authMiddleware, async (req, res) => {
   try {
     scraper = createScraper({
       companyId,
-      startDate: new Date(startDate),
+      startDate: start,
       combineInstallments: false,
       showBrowser: false,
       navigationRetryCount: 3,
@@ -98,7 +103,7 @@ app.post("/scrape", authMiddleware, async (req, res) => {
       preparePage,
     });
   } catch (err) {
-    console.error(`[scrape ${companyId}] createScraper failed:`, err);
+    console.error("[scrape %s] createScraper failed:", companyId, err);
     return res.status(400).json({ errorType: "generic-error", transactions: [] });
   }
 
@@ -107,7 +112,7 @@ app.post("/scrape", authMiddleware, async (req, res) => {
     result = await scraper.scrape(credentials);
   } catch (err) {
     const errorType = classifyError(err);
-    console.error(`[scrape ${companyId}] scrape threw (${errorType}):`, err);
+    console.error("[scrape %s] scrape threw (%s):", companyId, errorType, err);
     return res.json({ errorType, transactions: [], accountNumber: null });
   }
 
@@ -116,7 +121,11 @@ app.post("/scrape", authMiddleware, async (req, res) => {
       ? result.errorType
       : "generic-error";
     console.error(
-      `[scrape ${companyId}] scrape unsuccessful (errorType=${result.errorType}, errorMessage=${result.errorMessage}) → reported as ${errorType}`,
+      "[scrape %s] scrape unsuccessful (errorType=%s, errorMessage=%s) → reported as %s",
+      companyId,
+      result.errorType,
+      result.errorMessage,
+      errorType,
     );
     return res.json({ errorType, transactions: [], accountNumber: null });
   }
