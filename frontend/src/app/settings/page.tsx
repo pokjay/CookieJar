@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 import type { AppSettings } from "@/lib/types";
 import ScraperSettings from "@/components/ScraperSettings";
+import SyncButton from "@/components/SyncButton";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -394,6 +395,7 @@ export default function SettingsPage() {
         caption="Link bank accounts to automatically fetch transactions. Credentials are stored in an encrypted KeePass vault — your password is required each time you sync or manage accounts."
       >
         <ScraperSettings />
+        <SyncButton />
       </Section>
 
       {/* Mapping Management */}

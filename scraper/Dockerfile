@@ -8,7 +8,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+# PUPPETEER_SKIP_DOWNLOAD is the puppeteer >= 20 name (needed since
+# israeli-bank-scrapers v6 pulls puppeteer 24); the old
+# PUPPETEER_SKIP_CHROMIUM_DOWNLOAD is kept for older transitive installs.
+ENV PUPPETEER_SKIP_DOWNLOAD=true \
+    PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 RUN adduser --disabled-password --gecos '' --uid 1001 scraper
