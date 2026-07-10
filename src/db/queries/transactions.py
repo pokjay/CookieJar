@@ -5,7 +5,8 @@ from src.db.mock_data import get_transactions
 
 
 def get_existing_transaction_keys() -> set[tuple]:
-    """Return a set of (activity_date, account, charged_amount, description) tuples for duplicate detection."""
+    """Return a set of (activity_date, account, charged_amount, description)
+    tuples for duplicate detection."""
     if is_mock_mode():
         df = get_transactions()
         return set(
@@ -39,7 +40,9 @@ def get_distinct_accounts() -> list[str]:
     if is_mock_mode():
         return sorted(get_transactions()["account"].unique().tolist())
 
-    df = run_query("SELECT DISTINCT account FROM processed_transcations_with_categories ORDER BY account")
+    df = run_query(
+        "SELECT DISTINCT account FROM processed_transcations_with_categories ORDER BY account"
+    )
     return df["account"].tolist()
 
 

@@ -100,7 +100,9 @@ def pivot_cash_flow_table(cash_flow_df: pd.DataFrame, person: str | None = None)
     )
 
     agg["income_expense_diff"] = agg["income"] - agg["total_expense"]
-    agg["savings_pct"] = (agg["income_expense_diff"] / agg["income"] * 100).round(1).where(agg["income"] > 0, 0)
+    agg["savings_pct"] = (
+        (agg["income_expense_diff"] / agg["income"] * 100).round(1).where(agg["income"] > 0, 0)
+    )
 
     result = agg.merge(expense_pivot.reset_index(), on=["year", "month"], how="left")
     return result.sort_values(["year", "month"])
@@ -120,7 +122,9 @@ def aggregate_household_cash_flow(cash_flow_df: pd.DataFrame) -> pd.DataFrame:
     )
 
     agg["income_expense_diff"] = agg["income"] - agg["expense"]
-    agg["savings_pct"] = (agg["income_expense_diff"] / agg["income"] * 100).round(1).where(agg["income"] > 0, 0)
+    agg["savings_pct"] = (
+        (agg["income_expense_diff"] / agg["income"] * 100).round(1).where(agg["income"] > 0, 0)
+    )
 
     # Running averages
     agg["avg_income"] = agg.groupby("year")["income"].transform(

@@ -58,7 +58,8 @@ def get_unmapped_transactions_for_description(description: str) -> pd.DataFrame:
         mappings = get_business_mappings()
         mapped_ids: set = set(mappings["unique_id"]) if len(mappings) > 0 else set()
         rows = txns[(txns["description"] == description) & (~txns["unique_id"].isin(mapped_ids))]
-        return rows[["unique_id", "activity_date", "processed_description", "charged_amount"]].copy()
+        cols = ["unique_id", "activity_date", "processed_description", "charged_amount"]
+        return rows[cols].copy()
 
     return run_query(
         """

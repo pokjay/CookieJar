@@ -57,14 +57,18 @@ def check_duplicate(payload: SingleTransactionPayload) -> dict:
     if is_mock_mode():
         return {"is_duplicate": False}
     keys = get_existing_transaction_keys()
-    effective_charged = payload.charged_amount if payload.charged_amount is not None else payload.original_amount
+    effective_charged = (
+        payload.charged_amount if payload.charged_amount is not None else payload.original_amount
+    )
     key = (payload.activity_date, payload.account, effective_charged, payload.description)
     return {"is_duplicate": key in keys}
 
 
 @router.post("/single")
 def create_single(payload: SingleTransactionPayload) -> dict:
-    effective_charged = payload.charged_amount if payload.charged_amount is not None else payload.original_amount
+    effective_charged = (
+        payload.charged_amount if payload.charged_amount is not None else payload.original_amount
+    )
     row = {
         "unique_id": payload.unique_id or str(uuid.uuid4()),
         "account": payload.account,

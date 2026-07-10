@@ -247,7 +247,9 @@ class TestComputeHeatmap:
     def test_has_required_fields(self):
         df = _make_txn_df()
         result = compute_heatmap(df, 2024)
-        assert all("category" in r and "dow" in r and "day_name" in r and "spend" in r for r in result)
+        assert all(
+            "category" in r and "dow" in r and "day_name" in r and "spend" in r for r in result
+        )
 
     def test_no_none_categories(self):
         df = _make_txn_df()
@@ -255,7 +257,9 @@ class TestComputeHeatmap:
         assert all(r["category"] is not None for r in result)
 
 
-def _make_travel_df(dates: list[str], subcategories: list[str | None], amounts: list[float]) -> pd.DataFrame:
+def _make_travel_df(
+    dates: list[str], subcategories: list[str | None], amounts: list[float]
+) -> pd.DataFrame:
     df = pd.DataFrame({
         "activity_date": pd.to_datetime(dates),
         "subcategory": subcategories,

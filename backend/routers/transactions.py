@@ -6,23 +6,23 @@ import pandas as pd
 from fastapi import APIRouter, Query
 
 from backend.cache import ttl_cached
-from src.db.queries.transactions import get_all_transactions
-from src.settings import load_settings
 from backend.data_transactions import (
     _apply_sign_flip,
-    get_transactions_excl_travel,
-    get_distinct_persons_from_transactions,
-    compute_data_health,
-    compute_yoy_spend,
-    compute_monthly_yoy,
-    compute_monthly_by_account,
     compute_avg_by_category,
-    compute_subscriptions,
     compute_category_trends,
+    compute_data_health,
+    compute_heatmap,
+    compute_monthly_by_account,
+    compute_monthly_yoy,
+    compute_subscriptions,
     compute_top_businesses,
     compute_uncategorized,
-    compute_heatmap,
+    compute_yoy_spend,
+    get_distinct_persons_from_transactions,
+    get_transactions_excl_travel,
 )
+from src.db.queries.transactions import get_all_transactions
+from src.settings import load_settings
 
 router = APIRouter(prefix="/transactions")
 
@@ -55,7 +55,9 @@ def browse_meta():
         subcats[str(cat)] = sorted(group["subcategory"].dropna().unique().tolist())
 
     return {
-        "persons": sorted(df["person"].dropna().unique().tolist()) if "person" in df.columns else [],
+        "persons": (
+            sorted(df["person"].dropna().unique().tolist()) if "person" in df.columns else []
+        ),
         "accounts": sorted(df["account"].dropna().unique().tolist()),
         "categories": sorted(df["category"].dropna().unique().tolist()),
         "subcategories_by_category": subcats,

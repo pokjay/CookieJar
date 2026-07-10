@@ -34,7 +34,9 @@ def test_create_account_appears_in_listing():
 
 def test_upsert_balance_overrides_listing():
     account_id = inv.list_accounts()[0]["id"]
-    result = inv.upsert_balance(account_id, inv.UpsertBalanceBody(amount=1234.5, date=date(2025, 1, 31)))
+    result = inv.upsert_balance(
+        account_id, inv.UpsertBalanceBody(amount=1234.5, date=date(2025, 1, 31))
+    )
     assert result == {"ok": True}
     record = next(r for r in inv.list_accounts() if r["id"] == account_id)
     assert record["latest_amount"] == 1234.5
