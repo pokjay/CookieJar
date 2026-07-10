@@ -18,3 +18,14 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
+  # The scraper sidecar: a stale israeli-bank-scrapers pin was a root cause of
+  # the #109 sync breakage — weekly bumps + the CI drift guards
+  # (scraper/test/providers.test.js and the error-mapping tests) catch bank-site
+  # / library changes early instead of at the next real sync.
+  - package-ecosystem: npm
+    directory: /scraper
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]

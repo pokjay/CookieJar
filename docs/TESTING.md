@@ -1,12 +1,16 @@
 # Testing
 
-Three layers of tests, each with a different scope and runtime cost.
+Four layers of tests, each with a different scope and runtime cost.
 
 | Layer | Location | Runner | Touches DB? |
 |---|---|---|---|
 | Unit / data-function | `tests/test_*.py` (no `integration` mark) | `uv run pytest` | No — pure pandas / Python |
+| Scraper sidecar unit | `scraper/test/*.test.js` | `cd scraper && npm test` (`node:test`, no extra deps) | No |
 | Integration | `tests/test_*.py` marked `@pytest.mark.integration` (or `pytestmark = pytest.mark.integration`) | `uv run pytest -m integration` | Yes — needs `TEST_DATABASE_URL` |
 | End-to-end | `e2e/*.spec.ts` | `make e2e` (Docker) | Yes — seeded compose DB |
+
+The backend unit layer and the scraper layer run on every PR via
+`.github/workflows/tests.yml` (which also gates `ruff check`).
 
 ## Running locally
 
@@ -27,6 +31,36 @@ The `migrated_db` fixture in `tests/conftest.py` drops and recreates the `moneym
 ## Unit tests can never reach a real database
 
 `tests/conftest.py` hard-forces `USE_MOCK_DATA=true` and blanks `DATABASE_URL` *before any test module is imported*, and an autouse `_enforce_mock_mode` fixture fails any non-`integration` test that isn't in mock mode. This matters because `src.db.connection` calls `load_dotenv()` at import time: without the guard, a `.env` with `USE_MOCK_DATA=false` + a real `DATABASE_URL` would leak into the unit suite (the per-file `os.environ.setdefault(...)` lines are no-ops once that's happened), and an unmarked router **write** test could read or write production data. Integration tests opt back in explicitly with `monkeypatch.setenv("USE_MOCK_DATA", "false")` + `setenv("DATABASE_URL", <test url>)` (see `test_manual_transactions_bulk.py`).
+
+## Scraper sidecar tests (`scraper/test/`)
+
+The sidecar suite uses Node's built-in `node:test` runner — deliberately zero
+dev dependencies, since this container handles bank credentials and a minimal
+supply-chain surface is a feature. `scraper/src/app.js` exposes
+`createApp({ scraperFactory, token })`; tests inject a stub factory instead of
+module-mocking `israeli-bank-scrapers`, boot the app on an ephemeral port, and
+drive it with the built-in `fetch`.
+
+Two gotchas:
+
+- **Provider drift guard.** `scraper/providers.json` is the shared manifest of
+  supported providers and their credential fields. `scraper/test/providers.test.js`
+  checks it against the library's `CompanyTypes`/`SCRAPERS.loginFields`, and
+  `tests/test_scraper_keepass.py` checks it against `PROVIDER_SCHEMAS`. Adding
+  or changing a provider means updating all three, and a library bump that
+  changes login fields fails CI instead of the next real sync. The same applies
+  to the error-type mapping: `LIBRARY_ERROR_TYPE_MAP` in `app.js` is pinned
+  against the library's real `ScraperErrorTypes` enum.
+- **The `preparePage` browser test** (`preparepage.browser.test.js`) launches a
+  real Chromium to assert the #109 WAF-hardening (masked `navigator.webdriver`,
+  non-headless Windows UA, `he-IL` accept-language on the wire). It needs
+  `PUPPETEER_EXECUTABLE_PATH` pointing at a browser binary and **skips** when
+  none is found — except when `REQUIRE_BROWSER_TESTS` is set (CI sets it), where
+  a missing browser fails the run so the hardening guard can't silently stop
+  running.
+
+Nothing in this suite touches real bank sites; per-provider egress/anti-bot
+probes are a separate, non-merge-blocking concern (issue #110 part 1).
 
 ## E2E tests share database state — keep them serial inside a file
 
