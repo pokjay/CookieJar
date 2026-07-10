@@ -1,0 +1,98 @@
+# Scheduled per-provider access probe (issue #110, part 1). Runs the doctor's
+# escalating L0–L3 checks against the real bank sites as an EARLY-WARNING trend
+# signal — it is deliberately NOT a required check and never blocks a PR:
+#
+#  - GitHub runners egress from US datacenter IPs; Israeli bank WAFs
+#    geo/datacenter-filter, so a red L2 here can be pure runner-IP reputation
+#    rather than a real regression. The doctor's meaningful home is the deploy
+#    host (docs/TESTING.md).
+#  - Merge-blocking on third-party bank-site weather would break unrelated PRs.
+#
+# It surfaces breakage (a WAF change like #109, an egress block, a login-flow
+# change) within a week instead of at the next real user sync. The matrix goes
+# to the run summary; a failing run is visible in the Actions tab but stays
+# green at the workflow level so notifications aren't merge-gating.
+#
+# L3 (submitting bogus credentials to real login endpoints) is opt-in via the
+# manual dispatch input and never runs on the weekly schedule. L4 (real
+# credentials + 2FA) is manual-only and lives on the deploy host, not here.
+name: Scraper probes
+
+on:
+  schedule:
+    # Mondays 06:00 UTC — a weekly heartbeat.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "Single provider to probe (blank = all)"
+        required: false
+        default: ""
+      level:
+        description: "Highest access level to check (0-3)"
+        required: false
+        default: "2"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Per-provider access levels
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: scraper
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: scraper/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Locate Chrome for the browser-based checks
+        run: |
+          echo "PUPPETEER_EXECUTABLE_PATH=$(command -v google-chrome || command -v chromium-browser || command -v chromium)" >> "$GITHUB_ENV"
+
+      - name: Run doctor probe
+        # Inputs come through env (never interpolated into the script body) so a
+        # crafted dispatch input can't inject shell. Schedule runs leave both
+        # empty, giving the L2 default and all providers.
+        env:
+          INPUT_LEVEL: ${{ github.event.inputs.level }}
+          INPUT_PROVIDER: ${{ github.event.inputs.provider }}
+        run: |
+          LEVEL="${INPUT_LEVEL:-2}"
+          # Reject anything but a single digit / a known provider name before
+          # it reaches the command line.
+          case "$LEVEL" in
+            0|1|2|3) ;;
+            *) echo "Invalid level: $LEVEL" >&2; exit 1 ;;
+          esac
+          PROVIDER_ARG=()
+          if [ -n "$INPUT_PROVIDER" ]; then
+            case "$INPUT_PROVIDER" in
+              isracard|visaCal|max|amex) PROVIDER_ARG=(--provider "$INPUT_PROVIDER") ;;
+              *) echo "Unknown provider: $INPUT_PROVIDER" >&2; exit 1 ;;
+            esac
+          fi
+
+          {
+            echo '## Scraper access-level matrix'
+            echo ''
+            echo '```'
+            # A provider below the requested level exits non-zero; capture it as
+            # a signal without failing the job — this is a heartbeat, not a gate.
+            node src/doctor.js --level "$LEVEL" "${PROVIDER_ARG[@]}" \
+              || echo "(doctor exit $?: at least one provider below the requested level — see above)"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
