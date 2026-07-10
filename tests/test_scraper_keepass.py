@@ -4,12 +4,23 @@ changes (e.g. isracard's id/card6Digits lingering after switching to visaCal,
 which get_credentials() would then forward to the scraper as bogus fields).
 """
 
+import json
 from pathlib import Path
 
 import pytest
 from pykeepass import create_database
 
 from backend import scraper_keepass
+
+
+def test_provider_schemas_match_shared_manifest():
+    """scraper/providers.json is the shared manifest binding PROVIDER_SCHEMAS to
+    the JS-side drift guard (scraper/test/providers.test.js, which checks the
+    manifest against israeli-bank-scrapers' CompanyTypes/loginFields). If this
+    fails, one side gained/changed a provider without the other."""
+    manifest_path = Path(__file__).resolve().parents[1] / "scraper" / "providers.json"
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest == scraper_keepass.PROVIDER_SCHEMAS
 
 
 @pytest.fixture

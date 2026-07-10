@@ -4,11 +4,12 @@ selection, timezone handling, and run-finishing guarantees.
 """
 
 import os
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from datetime import date
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import httpx
 import pytest
 from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy.exc import IntegrityError
@@ -274,6 +275,126 @@ def test_run_sync_falls_back_to_account_title_when_no_account_number_anywhere():
         run_sync([{"companyId": "isracard", "accountTitle": "My Isracard"}], "run-1", 30)
 
     assert captured["rows"][0]["account"] == "My Isracard"
+
+
+# ── run_sync() — per-account error classification and overall-status roll-up
+#    (#110): all-success → success, mixed → partial, all-error → error. ───────
+
+
+@contextmanager
+def _run_sync_harness(scrape=None, upsert=None):
+    """Like _run_sync_mocks, but takes side_effects (so successive accounts can
+    get different results) and yields the mocks so tests can assert on
+    finish_run / finish_run_account calls."""
+    with (
+        patch("backend.scraper_sync.is_mock_mode", return_value=False),
+        patch("backend.scraper_sync.insert_run_account"),
+        patch("backend.scraper_sync.finish_run_account") as finish_run_account,
+        patch("backend.scraper_sync.finish_run") as finish_run,
+        patch("backend.scraper_sync.clear_all") as clear_all,
+        patch("backend.scraper_sync._scrape_account", side_effect=scrape),
+        patch("backend.scraper_sync.upsert_transactions", side_effect=upsert) as upsert_mock,
+    ):
+        yield SimpleNamespace(
+            finish_run_account=finish_run_account,
+            finish_run=finish_run,
+            clear_all=clear_all,
+            upsert=upsert_mock,
+        )
+
+
+_OK = {"errorType": None, "accountNumber": "1111", "transactions": []}
+_TWO_ACCOUNTS = [
+    {"companyId": "isracard", "accountTitle": "A"},
+    {"companyId": "visaCal", "accountTitle": "B"},
+]
+
+
+def test_run_sync_all_success_finishes_run_success_and_clears_cache_once():
+    with _run_sync_harness(scrape=[_OK, _OK], upsert=lambda rows: len(rows)) as mocks:
+        run_sync(_TWO_ACCOUNTS, "run-1", 30)
+    mocks.finish_run.assert_called_once_with("run-1", "success")
+    mocks.clear_all.assert_called_once()
+
+
+def test_run_sync_mixed_results_finish_run_partial():
+    failed = {"errorType": "wrong-credentials", "transactions": []}
+    with _run_sync_harness(scrape=[_OK, failed], upsert=lambda rows: len(rows)) as mocks:
+        run_sync(_TWO_ACCOUNTS, "run-1", 30)
+    mocks.finish_run.assert_called_once_with("run-1", "partial")
+    mocks.finish_run_account.assert_any_call(
+        "run-1", "B", "visaCal", "error", "wrong-credentials", 0
+    )
+
+
+def test_run_sync_all_error_finishes_run_error():
+    failed = {"errorType": "timeout", "transactions": []}
+    with _run_sync_harness(scrape=[failed, failed]) as mocks:
+        run_sync(_TWO_ACCOUNTS, "run-1", 30)
+    mocks.finish_run.assert_called_once_with("run-1", "error")
+
+
+def test_run_sync_empty_credential_list_finishes_run_error():
+    """The router 422s before dispatching an empty vault, but run_sync must not
+    report a run that scraped nothing as 'success' if it's ever reached."""
+    with _run_sync_harness() as mocks:
+        run_sync([], "run-1", 30)
+    mocks.finish_run.assert_called_once_with("run-1", "error")
+    mocks.clear_all.assert_called_once()
+
+
+def test_run_sync_sidecar_error_type_reaches_the_account_row_without_upsert():
+    """The sidecar's errorType (e.g. wrong-credentials from the #110 mapping
+    fix) must land on the run-account row untouched, and no upsert may run for
+    a failed account."""
+    failed = {"errorType": "account-blocked", "transactions": []}
+    with _run_sync_harness(scrape=[failed]) as mocks:
+        run_sync([{"companyId": "max", "accountTitle": "M"}], "run-1", 30)
+    mocks.finish_run_account.assert_called_once_with(
+        "run-1", "M", "max", "error", "account-blocked", 0
+    )
+    mocks.upsert.assert_not_called()
+
+
+def test_run_sync_connect_error_marks_account_unavailable():
+    """Sidecar container down → the account fails as 'unavailable' (a
+    deployment problem), never as a credential/scrape problem."""
+    with _run_sync_harness(scrape=httpx.ConnectError("connection refused")) as mocks:
+        run_sync([{"companyId": "isracard", "accountTitle": "A"}], "run-1", 30)
+    mocks.finish_run_account.assert_called_once_with(
+        "run-1", "A", "isracard", "error", "unavailable", 0
+    )
+    mocks.finish_run.assert_called_once_with("run-1", "error")
+
+
+def test_run_sync_other_request_failure_marks_account_unknown():
+    with _run_sync_harness(
+        scrape=httpx.HTTPStatusError("500", request=None, response=None)
+    ) as mocks:
+        run_sync([{"companyId": "isracard", "accountTitle": "A"}], "run-1", 30)
+    mocks.finish_run_account.assert_called_once_with(
+        "run-1", "A", "isracard", "error", "unknown", 0
+    )
+
+
+def test_run_sync_upsert_failure_marks_db_error_and_continues_to_next_account():
+    """A DB failure on one account must not abort the run: the account gets
+    'db_error', the loop moves on, and the overall status reflects the mix."""
+
+    def upsert_side_effect(rows):
+        if not upsert_side_effect.calls:
+            upsert_side_effect.calls.append(1)
+            raise RuntimeError("insert failed")
+        return len(rows)
+
+    upsert_side_effect.calls = []
+
+    with _run_sync_harness(scrape=[_OK, _OK], upsert=upsert_side_effect) as mocks:
+        run_sync(_TWO_ACCOUNTS, "run-1", 30)
+
+    mocks.finish_run_account.assert_any_call("run-1", "A", "isracard", "error", "db_error", 0)
+    mocks.finish_run_account.assert_any_call("run-1", "B", "visaCal", "success", None, 0)
+    mocks.finish_run.assert_called_once_with("run-1", "partial")
 
 
 def test_run_sync_finishes_run_as_error_on_unexpected_exception():
