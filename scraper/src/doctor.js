@@ -34,13 +34,27 @@ import { LAUNCH_ARGS, mapLibraryErrorType, preparePage } from "./app.js";
 export const LEVELS = ["L0", "L1", "L2", "L3", "L4"];
 
 // Text a WAF/CDN block page shows instead of the real login page. Cal's
-// "Request Rejected" is the exact string the #109 regression produced.
+// "Request Rejected" is the exact string the #109 regression produced; the
+// Cloudflare markers are the ones amex's "Sorry, you have been blocked" page
+// serves (issue #110 follow-up — the default markers missed it entirely, so an
+// amex Cloudflare block read as a clean L2 pass).
 export const DEFAULT_BLOCK_MARKERS = [
   "Request Rejected",
   "Access Denied",
   "The requested URL was rejected",
   "Attention Required",
+  // Cloudflare block / managed-challenge pages.
+  "you have been blocked",
+  "Cloudflare Ray ID",
+  "Please enable cookies",
 ];
+
+// Case-insensitive substring match of any block marker against page text.
+// Pure so the marker set is unit-testable without launching a browser.
+export function matchBlockMarker(body, markers) {
+  const haystack = String(body).toLowerCase();
+  return markers.find((m) => haystack.includes(m.toLowerCase())) ?? null;
+}
 
 function loadJson(relPath) {
   return JSON.parse(readFileSync(new URL(relPath, import.meta.url), "utf8"));
@@ -188,7 +202,7 @@ async function checkAntiBot(probe, blockMarkers, timeoutMs) {
     });
     const status = resp ? resp.status() : 0;
     const body = await page.content();
-    const hit = blockMarkers.find((m) => body.includes(m));
+    const hit = matchBlockMarker(body, blockMarkers);
     if (hit) {
       return { status: "fail", detail: `WAF block page ("${hit}"), HTTP ${status}` };
     }
@@ -202,7 +216,15 @@ async function checkAntiBot(probe, blockMarkers, timeoutMs) {
       }
       return { status: "pass", detail: `login form present (${probe.loginSelector})` };
     }
-    return { status: "pass", detail: `reached login page (HTTP ${status}), no block markers` };
+    // No stable pre-login selector (isracard/amex are API-driven SPAs), so all
+    // we can assert is "the landing page loaded and isn't a WAF block". This is
+    // a WEAK signal: it does not exercise the login POST, which is exactly where
+    // amex's Cloudflare challenge fires — so a green L2 here can still mask a
+    // blocked login. Run --level 3 to actually drive the auth step.
+    return {
+      status: "pass",
+      detail: `landing page OK (HTTP ${status}), no WAF markers — weak signal, login not exercised (run --level 3)`,
+    };
   } catch (err) {
     return { status: "fail", detail: err.message };
   } finally {

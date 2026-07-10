@@ -9,9 +9,11 @@ import assert from "node:assert/strict";
 import {
   checkConfig,
   computeExitCode,
+  DEFAULT_BLOCK_MARKERS,
   formatMatrix,
   highestReached,
   LEVELS,
+  matchBlockMarker,
   parseArgs,
   selectProviders,
 } from "../src/doctor.js";
@@ -159,5 +161,32 @@ describe("formatMatrix", () => {
     assert.ok(out.includes("L2"));
     assert.ok(!out.includes("L3"));
     assert.equal(LEVELS.length, 5);
+  });
+});
+
+describe("matchBlockMarker", () => {
+  test("catches the amex Cloudflare block page (issue #110 regression)", () => {
+    // Trimmed from the real he.americanexpress.co.il block page the scraper hit.
+    const cfBlock =
+      "<h1>Sorry, you have been blocked</h1>" +
+      "<p>Please enable cookies.</p>" +
+      "Cloudflare Ray ID: a1924a8258e68cd1";
+    assert.ok(matchBlockMarker(cfBlock, DEFAULT_BLOCK_MARKERS));
+  });
+
+  test("still catches the #109 Cal 'Request Rejected' block", () => {
+    assert.equal(
+      matchBlockMarker("<title>Request Rejected</title>", DEFAULT_BLOCK_MARKERS),
+      "Request Rejected",
+    );
+  });
+
+  test("is case-insensitive", () => {
+    assert.ok(matchBlockMarker("YOU HAVE BEEN BLOCKED", DEFAULT_BLOCK_MARKERS));
+  });
+
+  test("a real login page is not flagged", () => {
+    const loginPage = "<form id='login'><input name='password'></form>";
+    assert.equal(matchBlockMarker(loginPage, DEFAULT_BLOCK_MARKERS), null);
   });
 });
