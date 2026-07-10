@@ -75,6 +75,20 @@ export function classifyError(err) {
   return "generic-error";
 }
 
+// Chromium launch flags for the anti-bot-hardened browser. Shared with the
+// doctor probe (src/doctor.js) so its L2 anti-bot check exercises the exact
+// same fingerprint as a real scrape — a probe launched with different flags
+// could pass while production is blocked, or vice versa.
+export const LAUNCH_ARGS = [
+  "--no-sandbox",
+  "--disable-setuid-sandbox",
+  "--disable-dev-shm-usage",
+  "--disable-gpu",
+  // Drop the automation blink feature the WAF fingerprints.
+  "--disable-blink-features=AutomationControlled",
+  "--lang=he-IL",
+];
+
 // scraperFactory and token are injectable for tests; production (src/index.js)
 // uses the defaults.
 export function createApp({
@@ -120,15 +134,7 @@ export function createApp({
         combineInstallments: false,
         showBrowser: false,
         navigationRetryCount: 3,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-gpu",
-          // Drop the automation blink feature the WAF fingerprints.
-          "--disable-blink-features=AutomationControlled",
-          "--lang=he-IL",
-        ],
+        args: LAUNCH_ARGS,
         preparePage,
       });
     } catch (err) {
