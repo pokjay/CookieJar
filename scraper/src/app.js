@@ -32,28 +32,33 @@ export function mapLibraryErrorType(errorType) {
   return LIBRARY_ERROR_TYPE_MAP[errorType] ?? "generic-error";
 }
 
-// Banks (notably Cal) sit behind anti-bot WAFs that reject a vanilla headless
-// browser outright ("Request Rejected"). israeli-bank-scrapers only supplies the
-// scraping logic — it launches a plain headless Chromium and does no fingerprint
-// hardening, so we apply moneyman's approach via the library's `preparePage` hook:
-// present a real desktop User-Agent and mask the obvious automation signals
-// before the page navigates. Using `preparePage` (an awaited ScraperOptions hook)
-// rather than a browser-level event listener guarantees the patches are in place
-// before the first navigation, avoiding a race.
+// Banks sit behind anti-bot WAFs that reject a vanilla headless browser
+// outright ("Request Rejected" from Cal, a Cloudflare block page from amex).
+// israeli-bank-scrapers only supplies the scraping logic — it launches a plain
+// headless Chromium and does no fingerprint hardening — so we mask the
+// automation signals via the library's `preparePage` hook. Using `preparePage`
+// (an awaited ScraperOptions hook) rather than a browser-level event listener
+// guarantees the patches are in place before the first navigation.
+//
+// The one rule here: HIDE that we are automated, never LIE about what platform
+// we are. `page.setUserAgent(ua)` rewrites only the UA *string* — it does not
+// touch navigator.platform or the Sec-CH-UA-Platform request header, which keep
+// reporting the real OS. So the Windows UA this used to send (added in #109 for
+// Cal) made every request self-contradictory: a "Windows" UA from a box whose
+// every other platform signal said Linux. amex's Cloudflare flags exactly that
+// mismatch and served a block page to the login POST, while the landing-page GET
+// sailed through — which is why it read as a working scraper until it didn't
+// (#114). Cal never needed the Windows UA; masking `HeadlessChrome` is enough.
 export async function preparePage(page) {
-  // Derive the real Chrome version so this survives Chromium upgrades, but
-  // present a Windows UA — a Linux/HeadlessChrome UA is what Cal's WAF flags.
-  const version =
-    (String(await page.browser().version()).match(/Chrome\/([\d.]+)/) || [])[1] || "148.0.0.0";
-  await page.setUserAgent(
-    `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version} Safari/537.36`,
-  );
+  // Keep the real (Linux, current-version) identity and strip only the headless
+  // tell, so UA string, navigator.platform and Sec-CH-UA-* all agree.
+  const realUserAgent = await page.browser().userAgent();
+  await page.setUserAgent(realUserAgent.replace("HeadlessChrome/", "Chrome/"));
   await page.setExtraHTTPHeaders({ "accept-language": "he-IL,he;q=0.9,en;q=0.8" });
   await page.evaluateOnNewDocument(() => {
     Object.defineProperty(navigator, "webdriver", { get: () => undefined });
     Object.defineProperty(navigator, "language", { get: () => "he-IL" });
     Object.defineProperty(navigator, "languages", { get: () => ["he-IL", "he", "en"] });
-    Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
   });
 }
 
