@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.0](https://github.com/pokjay/CookieJar/compare/v0.7.0...v0.8.0) (2026-07-11)
+
+
+### Features
+
+* **scraper:** access-level doctor probe + weekly non-blocking probe workflow ([#113](https://github.com/pokjay/CookieJar/issues/113)) ([a70dd58](https://github.com/pokjay/CookieJar/commit/a70dd581f3aa334be75fda229a4acf8dcebc5b2c))
+
+
+### Bug Fixes
+
+* **scraper:** report a login form's own rejection instead of a mystery timeout ([#126](https://github.com/pokjay/CookieJar/issues/126)) ([f3594e4](https://github.com/pokjay/CookieJar/commit/f3594e4b35a439a93fc08c9a1dd45030375a1842))
+* **scraper:** stop sending a Windows UA from a Linux box (amex Cloudflare block) ([#125](https://github.com/pokjay/CookieJar/issues/125)) ([4ef1cff](https://github.com/pokjay/CookieJar/commit/4ef1cff3bd45ac9e35e608f0fefb5a2873a2d66b))
+
 ## [0.7.0](https://github.com/pokjay/CookieJar/compare/v0.6.0...v0.7.0) (2026-07-09)
 
 
