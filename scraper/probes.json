@@ -1,0 +1,34 @@
+{
+  "_comment": "Per-provider probe targets for src/doctor.js (issue #110). egressHosts, loginUrl, and loginSelector are derived from the israeli-bank-scrapers scraper sources (lib/scrapers/*.js) and must be revisited when the pinned library version changes. loginSelector is the element the library's own login flow waits for; null means the login page is an API-driven SPA with no stable pre-login selector, so L2 falls back to 'reached a real page, not a WAF block'. blockMarkers are appended to the shared defaults in doctor.js.",
+  "providers": {
+    "isracard": {
+      "egressHosts": ["digital.isracard.co.il"],
+      "loginUrl": "https://digital.isracard.co.il/personalarea/Login",
+      "loginSelector": null,
+      "blockMarkers": []
+    },
+    "visaCal": {
+      "egressHosts": [
+        "www.cal-online.co.il",
+        "connect.cal-online.co.il",
+        "api.cal-online.co.il",
+        "digital-web.cal-online.co.il"
+      ],
+      "loginUrl": "https://www.cal-online.co.il/",
+      "loginSelector": "#ccLoginDesktopBtn",
+      "blockMarkers": []
+    },
+    "max": {
+      "egressHosts": ["www.max.co.il", "onlinelcapi.max.co.il"],
+      "loginUrl": "https://www.max.co.il/login",
+      "loginSelector": "#login-password-link",
+      "blockMarkers": []
+    },
+    "amex": {
+      "egressHosts": ["he.americanexpress.co.il"],
+      "loginUrl": "https://he.americanexpress.co.il/personalarea/Login",
+      "loginSelector": null,
+      "blockMarkers": []
+    }
+  }
+}

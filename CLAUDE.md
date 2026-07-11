@@ -98,6 +98,41 @@ Tasks are tracked as GitHub Issues. Follow this procedure:
 9. **Merge**: Squash-merge by default, with PR # in the commit title. Preserve granular commit history only when it adds meaningful value.
 10. **Update issue**: Add a final summary to the issue.
 
+## What not to do
+
+- Never post PII to Github (IP Addresses, names, account details, etc...)
+- **Never handle the user's real credentials.** Diagnose credential problems with *derived* properties — a value's length, a form's validity flag, whether a field was accepted — never the value itself. The scraper's KeePass vault is unlocked per-sync with a password only the user has; keep it that way. Printing a password "just to see what's wrong" leaks a live banking credential into container logs and the transcript.
+- **Never log query strings, headers, or request bodies from bank sites.** That is where tokens and credentials live. Log origin + path only (see `traceUrl` in `scraper/src/app.js`).
+- **Never run destructive Docker commands against the running stack** — no `down -v`, no `volume prune`, no deleting `config/`. The KeePass vault and the Postgres data live there. Experiment in throwaway `docker run --rm` containers instead, so the user's live stack is never disturbed.
+- **Never install Node or Python packages onto the host.** No `npm install`, `npm ci`, `pip install`. The host has no `node_modules` and is not supposed to. See "Everything runs in Docker" below.
+
+## Everything runs in Docker
+
+JavaScript — frontend and scraper — only ever runs inside a container. There is no `node_modules` on the host, so anything that needs one (tests, lint, builds, a one-off script) runs in the image:
+
+```bash
+# scraper test suite — mount the sources over the image's copies
+docker run --rm -v "$PWD/scraper/src:/app/src:ro" -v "$PWD/scraper/test:/app/test:ro" \
+  -v "$PWD/scraper/providers.json:/app/providers.json:ro" \
+  ghcr.io/pokjay/cookiejar-scraper:latest npm test
+
+# build an image from local source instead of pulling it
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build <service>
+```
+
+Prefer the `make` targets (`make dev`, `make e2e`, …) wherever one exists.
+
+**Python is the exception**: `uv` is the sanctioned host-side tool — it manages its own isolated environment, so it never pollutes the host. Run `uv run pytest` and `uv run ruff` directly, as in the Commands section above. Just don't reach for `pip`.
+
+## Debugging the scraper
+
+The scraper's normal failure mode is *a bank site changed under it*, which no unit test can catch — #109, #114 and #115 were all live-site behaviour the suite was blind to.
+
+- **Verify scraper changes against the live provider before opening the PR.** A green suite proves nothing about a site that moved.
+- **Use bogus credentials as the test harness.** A WAF block and a credential rejection look completely different — an HTML block page versus the bank's own JSON API answering — so almost everything can be verified against the real site with fake credentials and zero secrets.
+- **Do not declare a hypothesis "ruled out" without testing it against the live system.** Reading the library source feels like proof and isn't: #114 was "ruled out" from a correct reading of `maskHeadlessUserAgent` whose conclusion was backwards, and one 3-minute live probe settled what a day of reasoning had gotten wrong.
+- The scrape timeline is logged by default (`[trace]` / `[form]` lines) — read `docker compose logs scraper` before reaching for new instrumentation.
+
 ## Commit Conventions
 
 - In branches: use conventional commits (`feat:`, `fix:`, `chore:`, `refactor:`, etc.)

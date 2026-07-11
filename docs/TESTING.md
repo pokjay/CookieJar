@@ -52,15 +52,62 @@ Two gotchas:
   to the error-type mapping: `LIBRARY_ERROR_TYPE_MAP` in `app.js` is pinned
   against the library's real `ScraperErrorTypes` enum.
 - **The `preparePage` browser test** (`preparepage.browser.test.js`) launches a
-  real Chromium to assert the #109 WAF-hardening (masked `navigator.webdriver`,
-  non-headless Windows UA, `he-IL` accept-language on the wire). It needs
+  real Chromium to assert the WAF-hardening: the #109 masking (masked
+  `navigator.webdriver`, non-headless UA, `he-IL` accept-language on the wire)
+  and the #114 consistency rule (the UA keeps the real platform — every OS
+  signal the browser emits must name the same OS; the old Windows UA spoof is
+  now a failure). It needs
   `PUPPETEER_EXECUTABLE_PATH` pointing at a browser binary and **skips** when
   none is found — except when `REQUIRE_BROWSER_TESTS` is set (CI sets it), where
   a missing browser fails the run so the hardening guard can't silently stop
   running.
 
 Nothing in this suite touches real bank sites; per-provider egress/anti-bot
-probes are a separate, non-merge-blocking concern (issue #110 part 1).
+probes are the separate `doctor` tool below.
+
+## Scraper access-level probe (`npm run doctor`)
+
+`scraper/src/doctor.js` diagnoses **where** a provider is broken by running
+escalating levels of access, so a failure pins to a layer instead of
+collapsing to `generic-error`:
+
+| Level | Checks | Network | Browser |
+|---|---|---|---|
+| L0 config | provider known to `israeli-bank-scrapers`, fields match the manifest | no | no |
+| L1 egress | TLS-connect each host the provider's scraper uses | yes | no |
+| L2 anti-bot | hardened browser reaches the real login page, not a WAF block | yes | yes |
+| L3 wrong-creds | bogus credentials classify as `wrong-credentials`, not a timeout | yes | yes |
+| L4 full scrape | real credentials return transactions | yes | yes |
+
+```bash
+cd scraper
+npm run doctor                              # all providers, up to L2
+npm run doctor -- --provider visaCal --level 3
+npm run doctor -- --json                    # machine-readable matrix
+```
+
+**Run it on the deploy host / inside the sidecar container** — that's where
+L1/L2 results are meaningful. In GitHub Actions the probe is an early-warning
+trend signal only (`.github/workflows/scraper-probes.yml`, weekly +
+`workflow_dispatch`), **never a required check**: runner IPs differ from the
+deploy host and bank WAFs geo/datacenter-filter, so a red L2 from CI can be
+pure runner-IP reputation. The scheduled run caps at L2; L3 (which submits
+bogus credentials to real endpoints) is manual-dispatch only.
+
+L2/L3 depend on `probes.json` (login URLs, selectors, egress hosts derived from
+the library's scraper sources) — revisit it when the pinned
+`israeli-bank-scrapers` version changes. The doctor's pure logic (arg parsing,
+config check, level roll-up, exit code, matrix) is unit-tested in
+`test/doctor.test.js`; the live network checks are exercised only by the
+scheduled workflow.
+
+**L4 is manual and needs real credentials + live 2FA/OTP** — never in CI. On
+the deploy host, pass each provider's login fields as a JSON env var:
+
+```bash
+PROBE_CREDS_visaCal='{"username":"...","password":"..."}' \
+    npm run doctor -- --level 4 --provider visaCal
+```
 
 ## E2E tests share database state — keep them serial inside a file
 

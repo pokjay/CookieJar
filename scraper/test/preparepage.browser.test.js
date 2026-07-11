@@ -4,9 +4,11 @@
 //          no navigator.webdriver, an accept-language header on the wire).
 //   #114 — the mask must not CONTRADICT itself. preparePage used to send a
 //          Windows UA string from a Linux box; setUserAgent doesn't touch
-//          navigator.platform or Sec-CH-UA-Platform, so those still said Linux
-//          and amex's Cloudflare blocked the login POST on the mismatch. Every
-//          platform signal must name the same OS.
+//          navigator.platform (and silences the Sec-CH-UA* request headers
+//          entirely rather than aligning them), so the JS-visible platform
+//          still said Linux and amex's Cloudflare blocked the login POST on
+//          the mismatch. Every platform signal that IS emitted must name the
+//          same OS.
 //
 // Needs a real Chromium. Resolution order: $PUPPETEER_EXECUTABLE_PATH, then
 // puppeteer's own bundled browser if present. Without one the test skips —
@@ -52,6 +54,11 @@ describe("preparePage hardening", { skip: executablePath ? false : "no Chromium 
   // Captured from the real HTTP request the hardened page makes, so header
   // patches (accept-language, UA) are verified on the wire, not just in JS.
   let requestHeaders;
+  // Sec-CH-UA-Platform as sent by an UNprepared page, captured in before().
+  // Proves the probe server/browser do exchange client hints, so the hardened
+  // page's missing hint below is attributable to preparePage, not a broken
+  // capture.
+  let baselinePlatformHint;
 
   before(async () => {
     server = http.createServer((req, res) => {
@@ -72,6 +79,11 @@ describe("preparePage hardening", { skip: executablePath ? false : "no Chromium 
       headless: true,
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"],
     });
+
+    const baselinePage = await browser.newPage();
+    await baselinePage.goto(origin);
+    baselinePlatformHint = requestHeaders["sec-ch-ua-platform"];
+    await baselinePage.close();
   });
 
   after(async () => {
@@ -129,10 +141,21 @@ describe("preparePage hardening", { skip: executablePath ? false : "no Chromium 
     assert.notEqual(uaOs, "unknown", `could not read an OS from UA: ${userAgent}`);
     assert.equal(uaOs, osFromPlatform(platform), "UA string contradicts navigator.platform");
 
-    // Chrome only sends client hints to a secure context; 127.0.0.1 counts as
-    // one, but don't hard-fail if a future Chromium stops sending them.
+    // page.setUserAgent() with a bare string (no userAgentMetadata) makes
+    // Chromium stop sending ALL Sec-CH-UA* client hints, so today the platform
+    // hint cannot contradict the UA because it is SILENCED, not consistent.
+    // Pin both halves of that: if a hint ever appears again (a future
+    // puppeteer forwarding metadata), it must agree with the UA; if it is
+    // absent, the baseline capture must show the header does flow without
+    // preparePage — otherwise the absence is a broken probe, not the
+    // documented setUserAgent effect, and this guard would be vacuous.
     const hint = requestHeaders["sec-ch-ua-platform"];
-    if (hint) {
+    if (hint === undefined) {
+      assert.ok(
+        baselinePlatformHint,
+        "sec-ch-ua-platform missing even without preparePage — hint capture is broken",
+      );
+    } else {
       assert.equal(
         osFromPlatformHint(hint),
         uaOs,

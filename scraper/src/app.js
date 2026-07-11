@@ -54,7 +54,12 @@ export async function preparePage(page, { companyId, diagnostics } = {}) {
   const guard = LOGIN_FORM_GUARDS[companyId];
   if (guard && diagnostics) watchLoginForm(page, guard, diagnostics);
   // Keep the real (Linux, current-version) identity and strip only the headless
-  // tell, so UA string, navigator.platform and Sec-CH-UA-* all agree.
+  // tell, so the UA string and navigator.platform agree. Known trade-off:
+  // setUserAgent() with a bare string makes Chromium stop sending the
+  // Sec-CH-UA* client-hint headers altogether (it only emits them when
+  // userAgentMetadata is supplied), so the platform hint goes SILENT rather
+  // than consistent. Silence beats contradiction for the WAFs we face today;
+  // if one ever demands client hints, pass userAgentMetadata here instead.
   const realUserAgent = await page.browser().userAgent();
   await page.setUserAgent(realUserAgent.replace("HeadlessChrome/", "Chrome/"));
   await page.setExtraHTTPHeaders({ "accept-language": "he-IL,he;q=0.9,en;q=0.8" });
@@ -259,6 +264,20 @@ export function classifyError(err) {
   return "generic-error";
 }
 
+// Chromium launch flags for the anti-bot-hardened browser. Shared with the
+// doctor probe (src/doctor.js) so its L2 anti-bot check exercises the exact
+// same fingerprint as a real scrape — a probe launched with different flags
+// could pass while production is blocked, or vice versa.
+export const LAUNCH_ARGS = [
+  "--no-sandbox",
+  "--disable-setuid-sandbox",
+  "--disable-dev-shm-usage",
+  "--disable-gpu",
+  // Drop the automation blink feature the WAF fingerprints.
+  "--disable-blink-features=AutomationControlled",
+  "--lang=he-IL",
+];
+
 // One place that decides what a failed scrape looks like in the logs. When the
 // page told us why (a field its own form rejected), lead with that — the library
 // error underneath it is just the symptom ("Navigation timeout of 30000 ms
@@ -362,15 +381,7 @@ export function createApp({
         combineInstallments: false,
         showBrowser: false,
         navigationRetryCount: 3,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-gpu",
-          // Drop the automation blink feature the WAF fingerprints.
-          "--disable-blink-features=AutomationControlled",
-          "--lang=he-IL",
-        ],
+        args: LAUNCH_ARGS,
         preparePage: (page) => preparePage(page, { companyId, diagnostics }),
       });
     } catch (err) {

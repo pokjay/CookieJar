@@ -23,6 +23,10 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY src/ ./src/
+# Manifests the doctor probe (src/doctor.js) reads at runtime from /app. Without
+# these the probe can't run inside the deployed container — which is exactly
+# where its L1/L2 checks are meaningful (the deploy host's IP, not CI's).
+COPY providers.json probes.json ./
 
 RUN chown -R scraper:scraper /app
 

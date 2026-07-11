@@ -87,7 +87,7 @@ Actual gaps in `run_sync` (`backend/scraper_sync.py`):
    - Auth middleware: token set + missing/wrong header → 401; correct Bearer token → 200; token unset → open (assert and document).
    - `/health` → `{status: "ok"}` without auth.
    - L0 drift guard per F3 (`providers.json` ↔ `CompanyTypes`/`SCRAPERS.loginFields`).
-   - `preparePage` hardening (the #109 fix): launch real Chromium via the library's own puppeteer, run `preparePage`, load a `data:` page, assert `navigator.webdriver === undefined`, UA contains no `HeadlessChrome`/`Linux` and does contain the real Chrome version, `navigator.languages` starts with `he-IL`. Separate file (`test/preparepage.browser.test.js`) so the fast suite stays browser-free.
+   - `preparePage` hardening (the #109 fix): launch real Chromium via the library's own puppeteer, run `preparePage`, load a `data:` page, assert `navigator.webdriver === undefined`, UA contains no `HeadlessChrome`/`Linux` and does contain the real Chrome version, `navigator.languages` starts with `he-IL`. Separate file (`test/preparepage.browser.test.js`) so the fast suite stays browser-free. *(Superseded by #114: the UA now deliberately keeps the real platform — `Linux` stays in the UA — and only the `HeadlessChrome` token is masked; the no-`Linux` assertion described here was the bug.)*
 5. Python side of the drift guard: `tests/test_scraper_keepass.py::test_provider_schemas_match_shared_manifest`.
 6. New `.github/workflows/tests.yml` (merge-blocking):
    - `backend`: `uv sync` → `uv run ruff check .` → `uv run pytest` (finally puts the existing ~40 tests in CI).
