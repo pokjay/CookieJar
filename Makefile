@@ -4,7 +4,7 @@ COMPOSE_DEV  := $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
 COMPOSE_DEVDB := $(COMPOSE) -f docker-compose.yml -f docker-compose.db.yml -f docker-compose.dev.yml
 COMPOSE_E2E  := $(COMPOSE) -f docker-compose.yml -f docker-compose.build.yml -f docker-compose.db.yml -f docker-compose.test.yml
 
-.PHONY: up down logs dev dev-rebuild dev-db dev-down e2e e2e-up e2e-run e2e-down e2e-clean
+.PHONY: up down logs dev dev-rebuild dev-db dev-down doctor e2e e2e-up e2e-run e2e-down e2e-clean
 
 # ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -35,6 +35,16 @@ dev-rebuild:
 ## Stop dev services
 dev-down:
 	$(COMPOSE_DEV) down --remove-orphans
+
+# ─── Bank-sync diagnostics ────────────────────────────────────────────────────
+
+## Probe each bank provider's access level (config → egress → anti-bot → ...)
+## against the RUNNING scraper sidecar, so results reflect the deploy host's IP
+## — where an anti-bot/WAF check is actually meaningful (unlike CI). Needs the
+## stack up (`make up`). Pass args via ARGS, e.g.
+##   make doctor ARGS="--provider visaCal --level 3"
+doctor:
+	$(COMPOSE_APP) exec scraper npm run doctor -- $(ARGS)
 
 # ─── E2E ──────────────────────────────────────────────────────────────────────
 
