@@ -132,14 +132,27 @@ CookieJar reads from a PostgreSQL `transactions` table and doesn't care how data
 
 ### When a sync fails
 
-A bank site changing under the scraper is the normal failure mode, and the library's error is often just `generic-error`. To see what the scrape actually did, restart the scraper with tracing on and run the sync again:
+A bank site changing under the scraper is the normal failure mode, and the library's own error is often just `generic-error`. So the scraper always logs the login flow's timeline — every navigation and API call, origins and paths only, never credentials, headers or bodies:
 
 ```bash
-SCRAPER_TRACE=1 SCRAPER_DEBUG='israeli-bank-scrapers:*' docker compose up -d scraper
-docker compose logs -f scraper
+docker compose logs scraper
 ```
 
-It logs every navigation and API call of the login flow (origins and paths only — never credentials, headers or bodies), which pins the failure to a step. Turn it back off with `docker compose up -d scraper`.
+```
+[form]  password length=20 accepted=false
+[trace] ->   POST https://connect.cal-online.co.il/col-rest/calconnect/authentication/login
+[trace] <- 200 https://connect.cal-online.co.il/col-rest/calconnect/authentication/login
+```
+
+The evidence is already there when a sync fails — no redeploy, no reproducing it with a debug flag. It costs about 60 lines per scrape.
+
+| `SCRAPER_TRACE` | |
+| --- | --- |
+| *(unset)* | the bank's own requests — the default |
+| `full` | also log analytics/ad beacons (about twice the volume) |
+| `off` | log nothing |
+
+Add `SCRAPER_DEBUG='israeli-bank-scrapers:*'` for the library's own step-by-step logging.
 
 ---
 

@@ -50,7 +50,7 @@ export function mapLibraryErrorType(errorType) {
 // sailed through — which is why it read as a working scraper until it didn't
 // (#114). Cal never needed the Windows UA; masking `HeadlessChrome` is enough.
 export async function preparePage(page, { companyId, diagnostics } = {}) {
-  if (process.env.SCRAPER_TRACE) attachTrace(page);
+  attachTrace(page);
   const guard = LOGIN_FORM_GUARDS[companyId];
   if (guard && diagnostics) watchLoginForm(page, guard, diagnostics);
   // Keep the real (Linux, current-version) identity and strip only the headless
@@ -66,15 +66,26 @@ export async function preparePage(page, { companyId, diagnostics } = {}) {
 }
 
 // When a scrape dies mid-flow, the library reports one line ("Navigation timeout
-// of 30000 ms exceeded") that says nothing about WHERE the flow was. SCRAPER_TRACE=1
-// logs the navigation + XHR timeline so the failing step is visible.
+// of 30000 ms exceeded") that says nothing about WHERE the flow was. The trace
+// logs the navigation + XHR timeline, which is what pinned #115: after "click on
+// login submit button" there was no login request at all, only ad beacons.
+//
+// It is ON by default, because a bank site changing under the scraper is the
+// normal failure mode and the evidence has to already be in the log — needing a
+// redeploy to see it means the next failure is diagnosed a day late. It costs
+// ~60 lines (~4.5 KB) per scrape once the trackers below are dropped.
+//
+//   SCRAPER_TRACE=full  also log third-party (analytics/ads) requests
+//   SCRAPER_TRACE=off   log nothing
 //
 // Deliberately logs ONLY origin + path: query strings, headers and bodies are
 // where the credentials and session tokens live, and this goes to container logs.
 export function traceUrl(url) {
   try {
     const u = new URL(url);
-    return `${u.origin}${u.pathname}`;
+    // Not u.origin: it is "null" for non-web schemes (chrome-extension:, data:),
+    // which turns the log line into noise like "null/".
+    return `${u.protocol}//${u.hostname}${u.pathname}`;
   } catch {
     return "(unparseable url)";
   }
@@ -84,19 +95,62 @@ export function traceUrl(url) {
 // Images, CSS, fonts and scripts are noise.
 const TRACED_RESOURCE_TYPES = new Set(["xhr", "fetch", "document"]);
 
-export function attachTrace(page, log = console.error) {
+// Bank login pages are packed with analytics and ad beacons — in a real scrape
+// they were HALF of all traced requests and none of them ever explained a
+// failure. Dropped by default so the timeline is readable.
+//
+// A denylist, not an allowlist, on purpose: an unknown host might be the very
+// SSO/auth hop that a login depends on, and silently hiding that is the exact
+// blindness this trace exists to fix. Worst case here is a few noisy lines.
+const TRACKER_DOMAINS = [
+  "google.com",
+  "google-analytics.com",
+  "googletagmanager.com",
+  "googleadservices.com",
+  "googleapis.com",
+  "doubleclick.net",
+  "adnxs.com",
+  "clarity.ms",
+  "hotjar.com",
+  "facebook.com",
+  "facebook.net",
+  "taboola.com",
+  "outbrain.com",
+];
+
+export function isTrackerUrl(url) {
+  try {
+    const host = new URL(url).hostname;
+    return TRACKER_DOMAINS.some((domain) => host === domain || host.endsWith(`.${domain}`));
+  } catch {
+    return false;
+  }
+}
+
+// "off" disables the trace; "full" keeps the third-party noise; anything else
+// (including unset) is the default first-party timeline.
+export function traceMode(value = process.env.SCRAPER_TRACE) {
+  const mode = String(value || "").toLowerCase();
+  if (mode === "off") return "off";
+  if (mode === "full") return "full";
+  return "first-party";
+}
+
+export function attachTrace(page, log = console.error, mode = traceMode()) {
+  if (mode === "off") return;
+  const skip = (url) => mode !== "full" && isTrackerUrl(url);
+
   page.on("framenavigated", (frame) => {
+    if (skip(frame.url())) return;
     log("[trace] nav  %s", traceUrl(frame.url()));
   });
   page.on("request", (req) => {
-    if (TRACED_RESOURCE_TYPES.has(req.resourceType())) {
-      log("[trace] ->   %s %s", req.method(), traceUrl(req.url()));
-    }
+    if (!TRACED_RESOURCE_TYPES.has(req.resourceType()) || skip(req.url())) return;
+    log("[trace] ->   %s %s", req.method(), traceUrl(req.url()));
   });
   page.on("response", (res) => {
-    if (TRACED_RESOURCE_TYPES.has(res.request().resourceType())) {
-      log("[trace] <- %d %s", res.status(), traceUrl(res.url()));
-    }
+    if (!TRACED_RESOURCE_TYPES.has(res.request().resourceType()) || skip(res.url())) return;
+    log("[trace] <- %d %s", res.status(), traceUrl(res.url()));
   });
 }
 
@@ -130,6 +184,7 @@ export function isFieldRejected(state) {
 // Polls the login field's validity. Reads only the value's LENGTH and Angular's
 // validity class — never the value, which is a live credential.
 export function watchLoginForm(page, guard, diagnostics, log = console.error) {
+  let previous = null;
   const timer = setInterval(async () => {
     const frame = page.frames().find((f) => f.url().includes(guard.frameUrlIncludes));
     if (!frame) return;
@@ -143,8 +198,12 @@ export function watchLoginForm(page, guard, diagnostics, log = console.error) {
       // Latch the LAST state, not the first: a value is transiently invalid
       // while it is still being typed.
       diagnostics.rejectedField = isFieldRejected(state) ? guard : null;
-      if (process.env.SCRAPER_TRACE) {
-        log("[form] %s length=%d invalid=%s", guard.field, state.length, state.invalid);
+      // Log transitions only — a couple of lines per scrape, and they show
+      // whether the site ever accepted the credential we typed.
+      const line = `${guard.field} length=${state.length} accepted=${!state.invalid}`;
+      if (line !== previous && traceMode() !== "off") {
+        log("[form] %s", line);
+        previous = line;
       }
     } catch {
       // The frame navigated out from under the evaluate — nothing to report.

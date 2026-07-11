@@ -11,12 +11,15 @@ import {
   classifyError,
   createApp,
   isFieldRejected,
+  isTrackerUrl,
   LIBRARY_ERROR_TYPE_MAP,
   LOGIN_FORM_GUARDS,
   mapLibraryErrorType,
   preparePage,
   resolveErrorType,
   SAFE_ERROR_TYPES,
+  traceMode,
+  traceUrl,
 } from "../src/app.js";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -227,6 +230,42 @@ describe("login-form rejection is reported as a credential problem", () => {
     assert.equal(resolveErrorType("INVALID_PASSWORD", {}), "wrong-credentials");
     assert.equal(resolveErrorType("TIMEOUT", {}), "timeout");
     assert.equal(resolveErrorType("GENERIC", undefined), "generic-error");
+  });
+
+  test("the trace keeps the bank and drops the ad-tech", () => {
+    // Half of every scrape's traced requests were beacons like these, and none of
+    // them ever explained a failure.
+    assert.equal(isTrackerUrl("https://www.google-analytics.com/g/collect"), true);
+    assert.equal(isTrackerUrl("https://ad.doubleclick.net/ccm/s/collect"), true);
+    assert.equal(isTrackerUrl("https://q.clarity.ms/collect"), true);
+    assert.equal(isTrackerUrl("https://www.googletagmanager.com/gtm.js"), true);
+
+    // The requests that actually matter — the ones whose absence WAS the bug.
+    assert.equal(
+      isTrackerUrl("https://connect.cal-online.co.il/col-rest/calconnect/authentication/login"),
+      false,
+    );
+    assert.equal(isTrackerUrl("https://he.americanexpress.co.il/services/ProxyRequestHandler.ashx"), false);
+    assert.equal(isTrackerUrl("not a url"), false);
+  });
+
+  test("the trace is on unless explicitly turned off", () => {
+    assert.equal(traceMode(undefined), "first-party");
+    assert.equal(traceMode(""), "first-party");
+    assert.equal(traceMode("1"), "first-party");
+    assert.equal(traceMode("full"), "full");
+    assert.equal(traceMode("off"), "off");
+    assert.equal(traceMode("OFF"), "off");
+  });
+
+  test("the trace never logs query strings, where the secrets are", () => {
+    // amex puts the request name in the query; Cal puts tokens there.
+    assert.equal(
+      traceUrl("https://he.americanexpress.co.il/services/ProxyRequestHandler.ashx?reqName=performLogonI&t=abc"),
+      "https://he.americanexpress.co.il/services/ProxyRequestHandler.ashx",
+    );
+    assert.equal(traceUrl("chrome-extension://invalid/"), "chrome-extension://invalid/");
+    assert.equal(traceUrl("nullblank"), "(unparseable url)");
   });
 
   test("the visaCal guard watches the field Cal actually validates", () => {

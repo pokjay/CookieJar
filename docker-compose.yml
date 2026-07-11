@@ -4,8 +4,10 @@ services:
     build: ./scraper   # uncomment for local builds
     environment:
       SCRAPER_TOKEN: ${SCRAPER_TOKEN:-}
-      # SCRAPER_TRACE=1 logs the navigation/XHR timeline of a scrape (origins and
-      # paths only) so a mid-flow failure can be pinned to a step. Off by default.
+      # The scraper logs each scrape's navigation/XHR timeline (origins and paths
+      # only) so a failed sync can be pinned to a step without a redeploy. It is on
+      # by default and costs ~60 lines per scrape. "full" also logs analytics/ad
+      # beacons; "off" disables it.
       SCRAPER_TRACE: ${SCRAPER_TRACE:-}
       # DEBUG=israeli-bank-scrapers:* adds the library's own step logging.
       DEBUG: ${SCRAPER_DEBUG:-}
