@@ -98,6 +98,9 @@ Tasks are tracked as GitHub Issues. Follow this procedure:
 9. **Merge**: Squash-merge by default, with PR # in the commit title. Preserve granular commit history only when it adds meaningful value.
 10. **Update issue**: Add a final summary to the issue.
 
+## What not to do
+- Never post PII to Github (IP Addresses, names, account details, etc...)
+
 ## Commit Conventions
 
 - In branches: use conventional commits (`feat:`, `fix:`, `chore:`, `refactor:`, etc.)
