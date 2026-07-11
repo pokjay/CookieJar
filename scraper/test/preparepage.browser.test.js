@@ -210,8 +210,56 @@ describe("login-form guard", { skip: executablePath ? false : "no Chromium avail
     await page.type('[formcontrolname="password"]', "alphanumeric2026");
     await settle();
     assert.equal(diagnostics.rejectedField, null);
+    // The watcher saw the field — logFailure relies on this to tell "the
+    // password was fine" apart from "the guard's selectors went stale".
+    assert.equal(diagnostics.fieldObserved, true);
     // A genuine failure must still report as itself.
     assert.equal(resolveErrorType("GENERIC", diagnostics), "generic-error");
+
+    await page.close();
+  });
+
+  test("a rejection survives the form being wiped", async () => {
+    const page = await browser.newPage();
+    await page.goto(origin);
+    const diagnostics = {};
+    watchLoginForm(page, guard, diagnostics, () => {});
+
+    await page.type('[formcontrolname="password"]', "my-p@ssword-2026");
+    await settle();
+    assert.ok(diagnostics.rejectedField, "expected the rejected password to be flagged");
+
+    // A navigation retry reloading the login form empties the field. Empty is
+    // "not typed yet", not "the site changed its mind" — the rejection stands.
+    await page.$eval('[formcontrolname="password"]', (el) => {
+      el.value = "";
+      el.dispatchEvent(new Event("input"));
+    });
+    await settle();
+    assert.ok(diagnostics.rejectedField, "an emptied field must not erase a seen rejection");
+
+    await page.close();
+  });
+
+  test("a rejection clears once the site accepts a later value", async () => {
+    const page = await browser.newPage();
+    await page.goto(origin);
+    const diagnostics = {};
+    watchLoginForm(page, guard, diagnostics, () => {});
+
+    await page.type('[formcontrolname="password"]', "my-p@ssword-2026");
+    await settle();
+    assert.ok(diagnostics.rejectedField, "expected the rejected password to be flagged");
+
+    // The user (or a retry) replaces it with a value the form accepts: only the
+    // site's own acceptance clears the latch.
+    await page.$eval('[formcontrolname="password"]', (el) => {
+      el.value = "";
+      el.dispatchEvent(new Event("input"));
+    });
+    await page.type('[formcontrolname="password"]', "alphanumeric2026");
+    await settle();
+    assert.equal(diagnostics.rejectedField, null);
 
     await page.close();
   });

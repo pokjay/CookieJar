@@ -6,6 +6,7 @@ import { once } from "node:events";
 // import. If a library bump breaks this path, that's a signal the error
 // vocabulary may have moved too — update LIBRARY_ERROR_TYPE_MAP alongside it.
 import { ScraperErrorTypes } from "israeli-bank-scrapers/lib/scrapers/errors.js";
+import { CompanyTypes } from "israeli-bank-scrapers";
 
 import {
   classifyError,
@@ -13,10 +14,12 @@ import {
   isFieldRejected,
   isTrackerUrl,
   LIBRARY_ERROR_TYPE_MAP,
+  logFailure,
   LOGIN_FORM_GUARDS,
   mapLibraryErrorType,
   preparePage,
   resolveErrorType,
+  resolveThrownErrorType,
   SAFE_ERROR_TYPES,
   traceMode,
   traceUrl,
@@ -226,6 +229,53 @@ describe("login-form rejection is reported as a credential problem", () => {
     assert.equal(resolveErrorType("TIMEOUT", rejected), "wrong-credentials");
   });
 
+  test("the thrown-error path applies the same precedence", () => {
+    const rejected = { rejectedField: LOGIN_FORM_GUARDS.visaCal };
+    const timeout = new Error("Navigation timeout of 30000 ms exceeded");
+    assert.equal(resolveThrownErrorType(timeout, rejected), "wrong-credentials");
+    // Without a rejection, thrown errors keep their own classification.
+    assert.equal(resolveThrownErrorType(timeout, {}), "timeout");
+    assert.equal(resolveThrownErrorType(new Error("boom"), undefined), "generic-error");
+  });
+
+  test("a rejection never hides the underlying error or result", () => {
+    const lines = [];
+    const log = (...args) => lines.push(args);
+    const diagnostics = { rejectedField: LOGIN_FORM_GUARDS.visaCal, fieldObserved: true };
+
+    // Thrown path: the crash evidence must survive the rejection message.
+    const crash = new Error("browser disconnected");
+    logFailure("visaCal", "wrong-credentials", diagnostics, crash, undefined, log);
+    assert.ok(lines.some((args) => args.includes(crash)), "expected the thrown error to be logged");
+
+    // Returned-result path: the library's own errorType/errorMessage survive too.
+    lines.length = 0;
+    const result = { errorType: "GENERIC", errorMessage: "Navigation timeout" };
+    logFailure("visaCal", "wrong-credentials", diagnostics, null, result, log);
+    assert.ok(
+      lines.some((args) => args.includes("GENERIC") && args.includes("Navigation timeout")),
+      "expected the library result to be logged",
+    );
+  });
+
+  test("a guard that never observed its field says so on failure", () => {
+    const lines = [];
+    const log = (...args) => lines.push(args.join(" "));
+
+    // Guard configured, field never seen: the stale-guard warning must fire.
+    logFailure("visaCal", "generic-error", {}, null, { errorType: "GENERIC" }, log);
+    assert.ok(
+      lines.some((line) => line.includes("never observed its field")),
+      "expected a stale-guard warning",
+    );
+
+    // Field observed, or no guard for the company: no warning.
+    lines.length = 0;
+    logFailure("visaCal", "generic-error", { fieldObserved: true }, null, { errorType: "GENERIC" }, log);
+    logFailure("hapoalim", "generic-error", {}, null, { errorType: "GENERIC" }, log);
+    assert.ok(!lines.some((line) => line.includes("never observed its field")));
+  });
+
   test("without a rejection, the library's mapping is untouched", () => {
     assert.equal(resolveErrorType("INVALID_PASSWORD", {}), "wrong-credentials");
     assert.equal(resolveErrorType("TIMEOUT", {}), "timeout");
@@ -247,6 +297,14 @@ describe("login-form rejection is reported as a credential problem", () => {
     );
     assert.equal(isTrackerUrl("https://he.americanexpress.co.il/services/ProxyRequestHandler.ashx"), false);
     assert.equal(isTrackerUrl("not a url"), false);
+
+    // Multi-purpose platform domains are NOT trackers: a login can genuinely
+    // depend on them (reCAPTCHA, SSO, OAuth), and dropping that hop would
+    // reproduce the exact "no request after the submit click" blindness of #115.
+    assert.equal(isTrackerUrl("https://www.google.com/recaptcha/api2/reload"), false);
+    assert.equal(isTrackerUrl("https://accounts.google.com/o/oauth2/v2/auth"), false);
+    assert.equal(isTrackerUrl("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword"), false);
+    assert.equal(isTrackerUrl("https://www.facebook.com/v19.0/dialog/oauth"), false);
   });
 
   test("the trace is on unless explicitly turned off", () => {
@@ -274,6 +332,18 @@ describe("login-form rejection is reported as a credential problem", () => {
     assert.equal(guard.selector, '[formcontrolname="password"]');
     assert.ok(guard.frameUrlIncludes.includes("connect.cal-online"));
     assert.ok(guard.hint.length > 0);
+  });
+
+  test("every guard is keyed by a company the library recognizes", () => {
+    // Same drift guard as providers.test.js: the runtime lookup is
+    // LOGIN_FORM_GUARDS[companyId], so a key the library renames away would
+    // silently detach the guard and regress Cal to generic-error.
+    for (const key of Object.keys(LOGIN_FORM_GUARDS)) {
+      assert.ok(
+        Object.values(CompanyTypes).includes(key),
+        `${key} missing from CompanyTypes — removed or renamed by the library?`,
+      );
+    }
   });
 });
 

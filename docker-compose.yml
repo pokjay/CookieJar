@@ -1,7 +1,7 @@
 services:
   scraper:
     image: ghcr.io/pokjay/cookiejar-scraper:${COOKIEJAR_TAG:-latest}
-    build: ./scraper   # uncomment for local builds
+    # build: ./scraper   # uncomment for local builds
     environment:
       SCRAPER_TOKEN: ${SCRAPER_TOKEN:-}
       # The scraper logs each scrape's navigation/XHR timeline (origins and paths
