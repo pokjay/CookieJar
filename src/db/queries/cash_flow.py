@@ -20,9 +20,15 @@ def _derive_cash_flow_from_manual(
     account_person_mapping: dict[str, str],
     sign_flipped_accounts: list[str] | None = None,
 ) -> pd.DataFrame:
-    """Derive monthly cash flow rows from transactions_manual for the configured bank accounts."""
+    """Derive monthly cash flow rows from transactions_manual for the
+    configured bank accounts."""
     if not cash_flow_accounts:
-        return pd.DataFrame(columns=["year", "month", "person", "account", "income", "expense", "money_transferred", "savings"])
+        return pd.DataFrame(
+            columns=[
+                "year", "month", "person", "account",
+                "income", "expense", "money_transferred", "savings",
+            ]
+        )
 
     placeholders = ", ".join(f":acct_{i}" for i in range(len(cash_flow_accounts)))
     params = {f"acct_{i}": acct for i, acct in enumerate(cash_flow_accounts)}
@@ -41,7 +47,12 @@ def _derive_cash_flow_from_manual(
     )
 
     if df.empty:
-        return pd.DataFrame(columns=["year", "month", "person", "account", "income", "expense", "money_transferred", "savings"])
+        return pd.DataFrame(
+            columns=[
+                "year", "month", "person", "account",
+                "income", "expense", "money_transferred", "savings",
+            ]
+        )
 
     df["activity_date"] = pd.to_datetime(df["activity_date"])
     df["year"] = df["activity_date"].dt.year
@@ -59,7 +70,8 @@ def _derive_cash_flow_from_manual(
     amt = df["charged_amount"].abs()
 
     df["income"] = 0.0
-    df.loc[cft.isin(["salary", "other_income"]), "income"] = amt[cft.isin(["salary", "other_income"])]
+    is_income = cft.isin(["salary", "other_income"])
+    df.loc[is_income, "income"] = amt[is_income]
 
     df["expense"] = 0.0
     df.loc[cft == "expense", "expense"] = amt[cft == "expense"]
@@ -83,8 +95,11 @@ def _derive_cash_flow_from_manual(
     return agg
 
 
-def _merge_with_transactions_precedence(base: pd.DataFrame, from_transactions: pd.DataFrame) -> pd.DataFrame:
-    """Merge cash flow table with transactions-derived data. Transactions take precedence for entire months."""
+def _merge_with_transactions_precedence(
+    base: pd.DataFrame, from_transactions: pd.DataFrame
+) -> pd.DataFrame:
+    """Merge cash flow table with transactions-derived data. Transactions
+    take precedence for entire months."""
     if from_transactions.empty:
         return base
 
@@ -117,14 +132,17 @@ def get_all_cash_flow() -> pd.DataFrame:
     base = run_query("SELECT * FROM monthly_cash_flow ORDER BY year, month, person, account")
 
     cash_flow_accounts, account_person_mapping, sign_flipped_accounts = _get_cash_flow_settings()
-    fallback = _derive_cash_flow_from_manual(cash_flow_accounts, account_person_mapping, sign_flipped_accounts)
+    fallback = _derive_cash_flow_from_manual(
+        cash_flow_accounts, account_person_mapping, sign_flipped_accounts
+    )
 
     result = _merge_with_transactions_precedence(base, fallback)
     return result.sort_values(["year", "month", "person", "account"]).reset_index(drop=True)
 
 
 def get_cash_flow_month_detail(year: int, month: int) -> pd.DataFrame:
-    """Get individual transactions from transactions_manual for a specific month and the configured cash flow accounts."""
+    """Get individual transactions from transactions_manual for a specific
+    month and the configured cash flow accounts."""
     if is_mock_mode():
         return pd.DataFrame()
 

@@ -1,5 +1,4 @@
 import pandas as pd
-import pytest
 
 from src.utils.calculations import (
     aggregate_household_cash_flow,
@@ -67,7 +66,10 @@ def _make_transactions_df() -> pd.DataFrame:
             ),
             "person": ["Alice", "Alice", "Alice", "Bob", "Bob", "Alice"],
             "charged_amount": [200, 150, 300, 100, -50, 400],
-            "category": ["Supermarket", "Supermarket", "Eating Out", "Eating Out", "Cashback", "Supermarket"],
+            "category": [
+                "Supermarket", "Supermarket", "Eating Out",
+                "Eating Out", "Cashback", "Supermarket",
+            ],
             "subcategory": ["Supermarket", "Water", "Food", "Pub", "Cashback", "Supermarket"],
         }
     )
@@ -187,7 +189,11 @@ class TestPrepareSankeyData:
         result = prepare_sankey_data(txn, cf, 2024)
 
         # Supermarket total in 2024: 200 + 150 = 350
-        supermarket_links = [lnk for lnk in result["links"] if lnk["source"] == "Income" and lnk["target"] == "Supermarket"]
+        supermarket_links = [
+            lnk
+            for lnk in result["links"]
+            if lnk["source"] == "Income" and lnk["target"] == "Supermarket"
+        ]
         assert len(supermarket_links) == 1
         assert supermarket_links[0]["value"] == 350
 

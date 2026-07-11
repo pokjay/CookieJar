@@ -209,7 +209,7 @@ wheels = [
 
 [[package]]
 name = "family-money-tracker"
-version = "0.5.4"
+version = "0.7.0"
 source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },

@@ -1,0 +1,6 @@
+{
+  "isracard": ["id", "card6Digits", "password"],
+  "visaCal": ["username", "password"],
+  "max": ["username", "password"],
+  "amex": ["id", "card6Digits", "password"]
+}

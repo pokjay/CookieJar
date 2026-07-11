@@ -2,8 +2,6 @@
 
 from fastapi import APIRouter, Query
 
-from src.constants import ACCOUNT_TYPE_CATEGORY_MAP
-
 from backend.cache import ttl_cached
 from backend.data import (
     aggregate_monthly_cash_flow,
@@ -17,6 +15,7 @@ from backend.data import (
     get_net_worth_by_category_over_time,
     get_net_worth_over_time,
 )
+from src.constants import ACCOUNT_TYPE_CATEGORY_MAP
 
 router = APIRouter(prefix="/overview")
 

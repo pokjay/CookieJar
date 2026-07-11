@@ -4,8 +4,8 @@ import os
 
 os.environ.setdefault("USE_MOCK_DATA", "true")
 
-from backend.routers.categories import MappingPayload, create_mapping  # noqa: E402
 from backend import cache as _cache_mod  # noqa: E402
+from backend.routers.categories import MappingPayload, create_mapping  # noqa: E402
 
 
 def test_create_mapping_returns_ok():
@@ -14,7 +14,9 @@ def test_create_mapping_returns_ok():
     Regression for #47: the handler previously called .clear() on plain Python
     functions, crashing every mapping creation with AttributeError.
     """
-    result = create_mapping(MappingPayload(description="STARBUCKS", category="Food", subcategory="Coffee"))
+    result = create_mapping(
+        MappingPayload(description="STARBUCKS", category="Food", subcategory="Coffee")
+    )
     assert result == {"ok": True}
 
 

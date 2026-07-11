@@ -4,22 +4,21 @@ import math
 
 import pandas as pd
 from fastapi import APIRouter, Query
-
 from pydantic import BaseModel
 
 from backend.cache import ttl_cached
 from backend.data_transactions import (
-    get_travel_transactions,
-    get_distinct_persons_from_transactions,
-    compute_data_health,
-    compute_yoy_spend,
-    compute_monthly_yoy,
-    compute_monthly_by_account,
     compute_avg_by_category,
     compute_category_trends,
-    compute_top_businesses,
+    compute_data_health,
     compute_heatmap,
+    compute_monthly_by_account,
+    compute_monthly_yoy,
+    compute_top_businesses,
     compute_travel_trips,
+    compute_yoy_spend,
+    get_distinct_persons_from_transactions,
+    get_travel_transactions,
 )
 from src.settings import load_settings, save_settings
 
@@ -46,7 +45,9 @@ def browse_meta():
     df = df.copy()
     df["activity_date"] = pd.to_datetime(df["activity_date"])
     return {
-        "persons": sorted(df["person"].dropna().unique().tolist()) if "person" in df.columns else [],
+        "persons": (
+            sorted(df["person"].dropna().unique().tolist()) if "person" in df.columns else []
+        ),
         "accounts": sorted(df["account"].dropna().unique().tolist()),
         "subcategories": sorted(df["subcategory"].dropna().unique().tolist()),
         "date_min": df["activity_date"].min().strftime("%Y-%m-%d"),

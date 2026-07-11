@@ -19,8 +19,8 @@ RUN adduser --disabled-password --gecos '' --uid 1001 scraper
 
 WORKDIR /app
 
-COPY package.json ./
-RUN npm install --omit=dev
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
 COPY src/ ./src/
 
