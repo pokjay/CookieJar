@@ -51,7 +51,12 @@ export function mapLibraryErrorType(errorType) {
 // (#114). Cal never needed the Windows UA; masking `HeadlessChrome` is enough.
 export async function preparePage(page) {
   // Keep the real (Linux, current-version) identity and strip only the headless
-  // tell, so UA string, navigator.platform and Sec-CH-UA-* all agree.
+  // tell, so the UA string and navigator.platform agree. Known trade-off:
+  // setUserAgent() with a bare string makes Chromium stop sending the
+  // Sec-CH-UA* client-hint headers altogether (it only emits them when
+  // userAgentMetadata is supplied), so the platform hint goes SILENT rather
+  // than consistent. Silence beats contradiction for the WAFs we face today;
+  // if one ever demands client hints, pass userAgentMetadata here instead.
   const realUserAgent = await page.browser().userAgent();
   await page.setUserAgent(realUserAgent.replace("HeadlessChrome/", "Chrome/"));
   await page.setExtraHTTPHeaders({ "accept-language": "he-IL,he;q=0.9,en;q=0.8" });

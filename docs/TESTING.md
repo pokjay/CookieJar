@@ -52,8 +52,11 @@ Two gotchas:
   to the error-type mapping: `LIBRARY_ERROR_TYPE_MAP` in `app.js` is pinned
   against the library's real `ScraperErrorTypes` enum.
 - **The `preparePage` browser test** (`preparepage.browser.test.js`) launches a
-  real Chromium to assert the #109 WAF-hardening (masked `navigator.webdriver`,
-  non-headless Windows UA, `he-IL` accept-language on the wire). It needs
+  real Chromium to assert the WAF-hardening: the #109 masking (masked
+  `navigator.webdriver`, non-headless UA, `he-IL` accept-language on the wire)
+  and the #114 consistency rule (the UA keeps the real platform — every OS
+  signal the browser emits must name the same OS; the old Windows UA spoof is
+  now a failure). It needs
   `PUPPETEER_EXECUTABLE_PATH` pointing at a browser binary and **skips** when
   none is found — except when `REQUIRE_BROWSER_TESTS` is set (CI sets it), where
   a missing browser fails the run so the hardening guard can't silently stop
