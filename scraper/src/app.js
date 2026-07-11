@@ -1,5 +1,5 @@
 import express from "express";
-import { createScraper } from "israeli-bank-scrapers";
+import { CompanyTypes, createScraper } from "israeli-bank-scrapers";
 
 // Wire-format error vocabulary: the ONLY errorType values this service may
 // return for a failed scrape (plus "unknown" from classifyError's null case).
@@ -49,7 +49,10 @@ export function mapLibraryErrorType(errorType) {
 // mismatch and served a block page to the login POST, while the landing-page GET
 // sailed through — which is why it read as a working scraper until it didn't
 // (#114). Cal never needed the Windows UA; masking `HeadlessChrome` is enough.
-export async function preparePage(page) {
+export async function preparePage(page, { companyId, diagnostics } = {}) {
+  attachTrace(page);
+  const guard = LOGIN_FORM_GUARDS[companyId];
+  if (guard && diagnostics) watchLoginForm(page, guard, diagnostics);
   // Keep the real (Linux, current-version) identity and strip only the headless
   // tell, so the UA string and navigator.platform agree. Known trade-off:
   // setUserAgent() with a bare string makes Chromium stop sending the
@@ -65,6 +68,182 @@ export async function preparePage(page) {
     Object.defineProperty(navigator, "language", { get: () => "he-IL" });
     Object.defineProperty(navigator, "languages", { get: () => ["he-IL", "he", "en"] });
   });
+}
+
+// When a scrape dies mid-flow, the library reports one line ("Navigation timeout
+// of 30000 ms exceeded") that says nothing about WHERE the flow was. The trace
+// logs the navigation + XHR timeline, which is what pinned #115: after "click on
+// login submit button" there was no login request at all, only ad beacons.
+//
+// It is ON by default, because a bank site changing under the scraper is the
+// normal failure mode and the evidence has to already be in the log — needing a
+// redeploy to see it means the next failure is diagnosed a day late. It costs
+// ~60 lines (~4.5 KB) per scrape once the trackers below are dropped.
+//
+//   SCRAPER_TRACE=full  also log third-party (analytics/ads) requests
+//   SCRAPER_TRACE=off   log nothing
+//
+// Deliberately logs ONLY origin + path: query strings, headers and bodies are
+// where the credentials and session tokens live, and this goes to container logs.
+export function traceUrl(url) {
+  try {
+    const u = new URL(url);
+    // Not u.origin: it is "null" for non-web schemes (chrome-extension:, data:),
+    // which turns the log line into noise like "null/".
+    return `${u.protocol}//${u.hostname}${u.pathname}`;
+  } catch {
+    return "(unparseable url)";
+  }
+}
+
+// The steps that reveal the flow: page/frame navigations and the API calls.
+// Images, CSS, fonts and scripts are noise.
+const TRACED_RESOURCE_TYPES = new Set(["xhr", "fetch", "document"]);
+
+// Bank login pages are packed with analytics and ad beacons — in a real scrape
+// they were HALF of all traced requests and none of them ever explained a
+// failure. Dropped by default so the timeline is readable.
+//
+// A denylist, not an allowlist, on purpose: an unknown host might be the very
+// SSO/auth hop that a login depends on, and silently hiding that is the exact
+// blindness this trace exists to fix. Worst case here is a few noisy lines.
+//
+// For the same reason, only single-purpose ad/analytics hosts belong here.
+// Multi-purpose platform domains — google.com (reCAPTCHA, accounts.google.com
+// SSO), googleapis.com (Firebase auth), facebook.com (OAuth) — must NOT be
+// listed: a login can genuinely depend on them, and dropping that hop would
+// reproduce the very "no request after the submit click" blindness of #115.
+const TRACKER_DOMAINS = [
+  "google-analytics.com",
+  "googletagmanager.com",
+  "googleadservices.com",
+  "doubleclick.net",
+  "adnxs.com",
+  "clarity.ms",
+  "hotjar.com",
+  "facebook.net",
+  "taboola.com",
+  "outbrain.com",
+];
+
+export function isTrackerUrl(url) {
+  try {
+    const host = new URL(url).hostname;
+    return TRACKER_DOMAINS.some((domain) => host === domain || host.endsWith(`.${domain}`));
+  } catch {
+    return false;
+  }
+}
+
+// "off" disables the trace; "full" keeps the third-party noise; anything else
+// (including unset) is the default first-party timeline.
+export function traceMode(value = process.env.SCRAPER_TRACE) {
+  const mode = String(value || "").toLowerCase();
+  if (mode === "off") return "off";
+  if (mode === "full") return "full";
+  return "first-party";
+}
+
+export function attachTrace(page, log = console.error, mode = traceMode()) {
+  if (mode === "off") return;
+  const skip = (url) => mode !== "full" && isTrackerUrl(url);
+
+  page.on("framenavigated", (frame) => {
+    if (skip(frame.url())) return;
+    log("[trace] nav  %s", traceUrl(frame.url()));
+  });
+  page.on("request", (req) => {
+    if (!TRACED_RESOURCE_TYPES.has(req.resourceType()) || skip(req.url())) return;
+    log("[trace] ->   %s %s", req.method(), traceUrl(req.url()));
+  });
+  page.on("response", (res) => {
+    if (!TRACED_RESOURCE_TYPES.has(res.request().resourceType()) || skip(res.url())) return;
+    log("[trace] <- %d %s", res.status(), traceUrl(res.url()));
+  });
+}
+
+// Some login forms validate a credential in the browser BEFORE they will submit
+// it, and the library can't see that. Cal is the case that bit us (#115): its
+// password field only accepts letters and digits — the validator's regex is
+// [A-z0-9], which is why ^_[]\` slip through as well — and any other character
+// leaves the Angular control `ng-invalid`. The library's clickButton() then calls
+// el.click() on a form that (ngSubmit) refuses to run, so NO login request is ever
+// sent, and the scrape dies 30 seconds later on a navigation that was never
+// coming. The user saw "generic-error" and had no way to know their password was
+// the problem.
+//
+// So watch the field the site is judging. If the site's own form says the value
+// is unusable, say that, instead of letting it surface as a mystery timeout.
+export const LOGIN_FORM_GUARDS = {
+  [CompanyTypes.visaCal]: {
+    frameUrlIncludes: "connect.cal-online",
+    field: "password",
+    selector: '[formcontrolname="password"]',
+    hint: "Cal's login form accepts only letters and digits in the password; it marked the password invalid and never submitted the form",
+  },
+};
+
+// A non-empty value that the page's own validator rejects. Empty is just "not
+// typed yet" (the control is `required`), not a rejection.
+export function isFieldRejected(state) {
+  return Boolean(state) && state.length > 0 && state.invalid;
+}
+
+// Polls the login field's validity. Reads only the value's LENGTH and Angular's
+// validity class — never the value, which is a live credential.
+export function watchLoginForm(page, guard, diagnostics, log = console.error) {
+  let previous = null;
+  const timer = setInterval(async () => {
+    const frame = page.frames().find((f) => f.url().includes(guard.frameUrlIncludes));
+    if (!frame) return;
+    try {
+      const state = await frame.evaluate((selector) => {
+        const el = document.querySelector(selector);
+        if (!el) return null;
+        return { length: el.value.length, invalid: el.className.includes("ng-invalid") };
+      }, guard.selector);
+      if (!state) return;
+      // Lets logFailure tell "the password was fine" apart from "the guard's
+      // selectors rotted and it never saw the field at all".
+      diagnostics.fieldObserved = true;
+      // A rejection latches until the site itself accepts a LATER value: a
+      // transiently-invalid value (still being typed) is cleared by the valid
+      // sample that follows, while an empty field (a reload, a navigation
+      // retry wiping the form) clears nothing — "not typed yet" says nothing
+      // about the credential, and must not erase a rejection already seen.
+      if (isFieldRejected(state)) diagnostics.rejectedField = guard;
+      else if (state.length > 0) diagnostics.rejectedField = null;
+      // Log transitions only — a couple of lines per scrape, and they show
+      // whether the site ever accepted the credential we typed.
+      const line = `${guard.field} length=${state.length} accepted=${!state.invalid}`;
+      if (line !== previous && traceMode() !== "off") {
+        log("[form] %s", line);
+        previous = line;
+      }
+    } catch {
+      // The frame navigated out from under the evaluate — nothing to report.
+    }
+  }, 500);
+  timer.unref?.();
+  page.once("close", () => clearInterval(timer));
+  return timer;
+}
+
+// The single place that encodes "the page's own rejection outranks whatever
+// the library concluded". A field the site itself refused is a credential
+// problem, not a generic one — and "wrong-credentials" is what actually points
+// the user at the fix. Both failure paths (returned result and thrown error)
+// route through this rule via the two resolvers below.
+function diagnosticsErrorType(diagnostics) {
+  return diagnostics?.rejectedField ? "wrong-credentials" : null;
+}
+
+export function resolveErrorType(libraryErrorType, diagnostics) {
+  return diagnosticsErrorType(diagnostics) ?? mapLibraryErrorType(libraryErrorType);
+}
+
+export function resolveThrownErrorType(err, diagnostics) {
+  return diagnosticsErrorType(diagnostics) ?? classifyError(err);
 }
 
 // Classifies errors *thrown* by scraper.scrape() (launch failures, navigation
@@ -98,6 +277,60 @@ export const LAUNCH_ARGS = [
   "--disable-blink-features=AutomationControlled",
   "--lang=he-IL",
 ];
+
+// One place that decides what a failed scrape looks like in the logs. When the
+// page told us why (a field its own form rejected), lead with that — the library
+// error underneath it is just the symptom ("Navigation timeout of 30000 ms
+// exceeded" for a login that was never submitted). log is injectable for tests.
+export function logFailure(companyId, errorType, diagnostics, err, result, log = console.error) {
+  // A guard whose site internals rotted (Cal redesigns, the selector or frame
+  // URL stops matching) would otherwise fail silently — failures would regress
+  // to the bare generic-error this guard exists to explain, while the logs
+  // suggest it is still covering us.
+  const guard = LOGIN_FORM_GUARDS[companyId];
+  if (guard && diagnostics && !diagnostics.fieldObserved) {
+    log(
+      "[scrape %s] the login-form guard never observed its field (%s in a %s frame) — the site's layout may have changed and the guard may be stale",
+      companyId,
+      guard.selector,
+      guard.frameUrlIncludes,
+    );
+  }
+  const rejected = diagnostics?.rejectedField;
+  if (rejected) {
+    log(
+      "[scrape %s] the site's own login form rejected the %s — %s. No login request was ever sent. → reported as %s",
+      companyId,
+      rejected.field,
+      rejected.hint,
+      errorType,
+    );
+    // Keep the evidence underneath: if what failed was actually something else
+    // entirely (a crash, a network error), its message and stack must not vanish
+    // behind the rejection message.
+    if (err) log("[scrape %s] underlying error:", companyId, err);
+    if (result) {
+      log(
+        "[scrape %s] underlying result: errorType=%s, errorMessage=%s",
+        companyId,
+        result.errorType,
+        result.errorMessage,
+      );
+    }
+    return;
+  }
+  if (err) {
+    log("[scrape %s] scrape threw (%s):", companyId, errorType, err);
+    return;
+  }
+  log(
+    "[scrape %s] scrape unsuccessful (errorType=%s, errorMessage=%s) → reported as %s",
+    companyId,
+    result.errorType,
+    result.errorMessage,
+    errorType,
+  );
+}
 
 // scraperFactory and token are injectable for tests; production (src/index.js)
 // uses the defaults.
@@ -136,6 +369,10 @@ export function createApp({
     const companyId = account.companyId;
     const credentials = account.credentials;
 
+    // Filled in by the login-form guard (see LOGIN_FORM_GUARDS) while the scrape
+    // runs, so a failure can be explained rather than just reported.
+    const diagnostics = {};
+
     let scraper;
     try {
       scraper = scraperFactory({
@@ -145,7 +382,7 @@ export function createApp({
         showBrowser: false,
         navigationRetryCount: 3,
         args: LAUNCH_ARGS,
-        preparePage,
+        preparePage: (page) => preparePage(page, { companyId, diagnostics }),
       });
     } catch (err) {
       console.error("[scrape %s] createScraper failed:", companyId, err);
@@ -156,20 +393,14 @@ export function createApp({
     try {
       result = await scraper.scrape(credentials);
     } catch (err) {
-      const errorType = classifyError(err);
-      console.error("[scrape %s] scrape threw (%s):", companyId, errorType, err);
+      const errorType = resolveThrownErrorType(err, diagnostics);
+      logFailure(companyId, errorType, diagnostics, err);
       return res.json({ errorType, transactions: [], accountNumber: null });
     }
 
     if (!result.success) {
-      const errorType = mapLibraryErrorType(result.errorType);
-      console.error(
-        "[scrape %s] scrape unsuccessful (errorType=%s, errorMessage=%s) → reported as %s",
-        companyId,
-        result.errorType,
-        result.errorMessage,
-        errorType,
-      );
+      const errorType = resolveErrorType(result.errorType, diagnostics);
+      logFailure(companyId, errorType, diagnostics, null, result);
       return res.json({ errorType, transactions: [], accountNumber: null });
     }
 

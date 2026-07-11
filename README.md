@@ -131,6 +131,30 @@ CookieJar reads from a PostgreSQL `transactions` table and doesn't care how data
 - **[moneyman](https://github.com/daniel-hauser/moneyman)** — external scheduled scraping built on the same israeli-bank-scrapers library, supporting a wider range of Israeli banks and cards and writing into the same table. Both produce the same transaction IDs, so imports deduplicate against each other.
 - **CSV import & manual entry** — through the app's Manual Transactions page.
 
+### When a sync fails
+
+A bank site changing under the scraper is the normal failure mode, and the library's own error is often just `generic-error`. So the scraper always logs the login flow's timeline — every navigation and API call, origins and paths only, never credentials, headers or bodies:
+
+```bash
+docker compose logs scraper
+```
+
+```
+[form]  password length=20 accepted=false
+[trace] ->   POST https://connect.cal-online.co.il/col-rest/calconnect/authentication/login
+[trace] <- 200 https://connect.cal-online.co.il/col-rest/calconnect/authentication/login
+```
+
+The evidence is already there when a sync fails — no redeploy, no reproducing it with a debug flag. It costs about 60 lines per scrape.
+
+| `SCRAPER_TRACE` | |
+| --- | --- |
+| *(unset)* | the bank's own requests — the default |
+| `full` | also log analytics/ad beacons (about twice the volume) |
+| `off` | log nothing |
+
+Add `SCRAPER_DEBUG='israeli-bank-scrapers:*'` for the library's own step-by-step logging.
+
 ---
 
 ## Development
