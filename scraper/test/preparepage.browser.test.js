@@ -23,7 +23,7 @@ import { once } from "node:events";
 // copy in devDependencies that could skew versions.
 import puppeteer from "puppeteer";
 
-import { preparePage } from "../src/app.js";
+import { LOGIN_FORM_GUARDS, preparePage, resolveErrorType, watchLoginForm } from "../src/app.js";
 
 function resolveExecutable() {
   const fromEnv = process.env.PUPPETEER_EXECUTABLE_PATH;
@@ -139,6 +139,95 @@ describe("preparePage hardening", { skip: executablePath ? false : "no Chromium 
         `UA string contradicts Sec-CH-UA-Platform (${hint})`,
       );
     }
+
+    await page.close();
+  });
+});
+
+// #115: the guard is what turns "Navigation timeout of 30000 ms exceeded" into
+// "the site rejected your password". Drive it against a real browser and a form
+// that validates like Cal's.
+describe("login-form guard", { skip: executablePath ? false : "no Chromium available" }, () => {
+  let browser;
+  let server;
+  let origin;
+
+  before(async () => {
+    server = http.createServer((_req, res) => {
+      res.setHeader("content-type", "text/html");
+      res.end(`<!doctype html><title>login</title>
+        <input formcontrolname="password" type="password" class="ng-invalid">
+        <script>
+          const el = document.querySelector('[formcontrolname="password"]');
+          el.addEventListener('input', () => {
+            const ok = el.value.length > 0 && /^[A-Za-z0-9]+$/.test(el.value);
+            el.className = ok ? 'ng-valid' : 'ng-invalid';
+          });
+        </script>`);
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    origin = `http://127.0.0.1:${server.address().port}`;
+    browser = await puppeteer.launch({
+      executablePath,
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"],
+    });
+  });
+
+  after(async () => {
+    await browser?.close();
+    server?.close();
+  });
+
+  const guard = { ...LOGIN_FORM_GUARDS.visaCal, frameUrlIncludes: "127.0.0.1" };
+  // The watcher polls every 500ms.
+  const settle = () => new Promise((r) => setTimeout(r, 900));
+
+  test("flags a password the form itself refuses", async () => {
+    const page = await browser.newPage();
+    await page.goto(origin);
+    const diagnostics = {};
+    watchLoginForm(page, guard, diagnostics, () => {});
+
+    // A password with a character Cal's validator rejects — exactly the shape of
+    // the one that broke visaCal in production.
+    await page.type('[formcontrolname="password"]', "my-p@ssword-2026");
+    await settle();
+    assert.ok(diagnostics.rejectedField, "expected the rejected password to be flagged");
+    assert.equal(diagnostics.rejectedField.field, "password");
+    assert.equal(resolveErrorType("GENERIC", diagnostics), "wrong-credentials");
+
+    await page.close();
+  });
+
+  test("stays quiet for a password the form accepts", async () => {
+    const page = await browser.newPage();
+    await page.goto(origin);
+    const diagnostics = {};
+    watchLoginForm(page, guard, diagnostics, () => {});
+
+    await page.type('[formcontrolname="password"]', "alphanumeric2026");
+    await settle();
+    assert.equal(diagnostics.rejectedField, null);
+    // A genuine failure must still report as itself.
+    assert.equal(resolveErrorType("GENERIC", diagnostics), "generic-error");
+
+    await page.close();
+  });
+
+  test("does not flag a half-typed password as rejected", async () => {
+    const page = await browser.newPage();
+    await page.goto(origin);
+    const diagnostics = {};
+    watchLoginForm(page, guard, diagnostics, () => {});
+
+    // Mid-typing, a valid password is briefly invalid (empty). The guard latches
+    // the LAST state, so it must not report a rejection once typing completes.
+    await page.type('[formcontrolname="password"]', "abc", { delay: 200 });
+    await page.type('[formcontrolname="password"]', "def", { delay: 200 });
+    await settle();
+    assert.equal(diagnostics.rejectedField, null);
 
     await page.close();
   });

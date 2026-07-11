@@ -1,9 +1,14 @@
 services:
   scraper:
     image: ghcr.io/pokjay/cookiejar-scraper:${COOKIEJAR_TAG:-latest}
-    # build: ./scraper   # uncomment for local builds
+    build: ./scraper   # uncomment for local builds
     environment:
       SCRAPER_TOKEN: ${SCRAPER_TOKEN:-}
+      # SCRAPER_TRACE=1 logs the navigation/XHR timeline of a scrape (origins and
+      # paths only) so a mid-flow failure can be pinned to a step. Off by default.
+      SCRAPER_TRACE: ${SCRAPER_TRACE:-}
+      # DEBUG=israeli-bank-scrapers:* adds the library's own step logging.
+      DEBUG: ${SCRAPER_DEBUG:-}
     networks:
       - scraper_internal
       # Note: scraper also gets implicit access to the default bridge for

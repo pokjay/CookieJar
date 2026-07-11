@@ -10,9 +10,12 @@ import { ScraperErrorTypes } from "israeli-bank-scrapers/lib/scrapers/errors.js"
 import {
   classifyError,
   createApp,
+  isFieldRejected,
   LIBRARY_ERROR_TYPE_MAP,
+  LOGIN_FORM_GUARDS,
   mapLibraryErrorType,
   preparePage,
+  resolveErrorType,
   SAFE_ERROR_TYPES,
 } from "../src/app.js";
 
@@ -189,9 +192,49 @@ describe("POST /scrape validation", () => {
       assert.equal(options.companyId, "visaCal");
       assert.ok(options.startDate instanceof Date);
       assert.equal(options.startDate.toISOString().slice(0, 10), "2026-06-01");
-      assert.equal(options.preparePage, preparePage);
+      // preparePage is now bound per-scrape (it carries the companyId and the
+      // diagnostics object the login-form guard writes into), so it's a closure
+      // over the shared hook rather than the hook itself.
+      assert.equal(typeof options.preparePage, "function");
       assert.equal(options.showBrowser, false);
     });
+  });
+});
+
+// #115: Cal's login form validates the password in the browser and refuses to
+// submit an invalid one, so the library never sends a login request and dies on
+// a 30s navigation timeout — reported as a bare "generic-error" that told the
+// user nothing. When the page has told us the field was rejected, that wins.
+describe("login-form rejection is reported as a credential problem", () => {
+  test("a rejected field is only a rejection once something has been typed", () => {
+    // Empty is "not filled in yet" — the control is `required`, so it is
+    // invalid from the moment the form renders. That is not a rejection.
+    assert.equal(isFieldRejected({ length: 0, invalid: true }), false);
+    assert.equal(isFieldRejected({ length: 12, invalid: false }), false);
+    assert.equal(isFieldRejected({ length: 20, invalid: true }), true);
+    assert.equal(isFieldRejected(null), false);
+  });
+
+  test("a rejected field outranks the library's error type", () => {
+    const rejected = { rejectedField: LOGIN_FORM_GUARDS.visaCal };
+    // What Cal actually produces: GENERIC -> would be a useless "generic-error".
+    assert.equal(resolveErrorType("GENERIC", {}), "generic-error");
+    assert.equal(resolveErrorType("GENERIC", rejected), "wrong-credentials");
+    assert.equal(resolveErrorType("TIMEOUT", rejected), "wrong-credentials");
+  });
+
+  test("without a rejection, the library's mapping is untouched", () => {
+    assert.equal(resolveErrorType("INVALID_PASSWORD", {}), "wrong-credentials");
+    assert.equal(resolveErrorType("TIMEOUT", {}), "timeout");
+    assert.equal(resolveErrorType("GENERIC", undefined), "generic-error");
+  });
+
+  test("the visaCal guard watches the field Cal actually validates", () => {
+    const guard = LOGIN_FORM_GUARDS.visaCal;
+    assert.equal(guard.field, "password");
+    assert.equal(guard.selector, '[formcontrolname="password"]');
+    assert.ok(guard.frameUrlIncludes.includes("connect.cal-online"));
+    assert.ok(guard.hint.length > 0);
   });
 });
 
