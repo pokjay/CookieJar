@@ -9,13 +9,18 @@ permissions:
   pull-requests: write
 
 jobs:
+  # uv.lock and frontend/package-lock.json each pin the root-package version
+  # that release-please bumps in pyproject.toml / frontend/package.json, so a
+  # release PR that only touched the manifests would fail `uv sync --locked`.
+  # release-please-config.json lists both lockfiles as extra-files, making the
+  # version bump land inside release-please's own commit — a follow-up job that
+  # pushed a sync commit wouldn't work, because GITHUB_TOKEN-authored pushes
+  # never re-trigger the PR's checks (see the same caveat in schema-check.yml).
   release-please:
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
-      prs_created: ${{ steps.release.outputs.prs_created }}
-      pr: ${{ steps.release.outputs.pr }}
     steps:
       - uses: googleapis/release-please-action@v5
         id: release
@@ -23,42 +28,6 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-
-  # release-please bumps the version in pyproject.toml / frontend/package.json
-  # directly via the GitHub API — it has no idea uv.lock and package-lock.json
-  # each pin that same version in their own root-package entry, so those go
-  # stale on every release PR and fail `uv sync --locked` / `npm ci` in CI.
-  # Re-sync both lockfiles on the release PR's own branch so the version bump
-  # lands as a normal commit before anyone has to notice CI is red.
-  sync-lockfiles:
-    needs: release-please
-    if: ${{ needs.release-please.outputs.prs_created == 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ fromJSON(needs.release-please.outputs.pr).headBranchName }}
-
-      - uses: astral-sh/setup-uv@v5
-      - run: uv lock
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 20
-      - working-directory: frontend
-        run: npm install --package-lock-only
-
-      - name: Commit lockfiles if release-please left them stale
-        run: |
-          if git diff --quiet -- uv.lock frontend/package-lock.json; then
-            echo "Lockfiles already match the version bump."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add uv.lock frontend/package-lock.json
-          git commit -m "chore: sync lockfiles with release-please version bump"
-          git push
 
   docker:
     needs: release-please
