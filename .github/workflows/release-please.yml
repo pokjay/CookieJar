@@ -9,6 +9,13 @@ permissions:
   pull-requests: write
 
 jobs:
+  # uv.lock and frontend/package-lock.json each pin the root-package version
+  # that release-please bumps in pyproject.toml / frontend/package.json, so a
+  # release PR that only touched the manifests would fail `uv sync --locked`.
+  # release-please-config.json lists both lockfiles as extra-files, making the
+  # version bump land inside release-please's own commit — a follow-up job that
+  # pushed a sync commit wouldn't work, because GITHUB_TOKEN-authored pushes
+  # never re-trigger the PR's checks (see the same caveat in schema-check.yml).
   release-please:
     runs-on: ubuntu-latest
     outputs:
