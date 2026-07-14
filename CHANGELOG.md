@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.1](https://github.com/pokjay/CookieJar/compare/v0.8.0...v0.8.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* sync uv.lock/package-lock.json with release-please, and keep them in sync going forward ([#128](https://github.com/pokjay/CookieJar/issues/128)) ([d52af2f](https://github.com/pokjay/CookieJar/commit/d52af2ff2c5f8bbfa0b2d175bfebdcad6ba12409))
+
 ## [0.8.0](https://github.com/pokjay/CookieJar/compare/v0.7.0...v0.8.0) (2026-07-11)
 
 
