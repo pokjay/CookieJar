@@ -17,3 +17,6 @@ e2e/test-results/
 e2e/.auth/
 tsconfig.tsbuildinfo
 .vscode/settings.json
+
+# Wealthfolio CSV export output (scripts/export_wealthfolio_csv.py)
+wealthfolio-export/
