@@ -278,6 +278,12 @@ export const LAUNCH_ARGS = [
   "--lang=he-IL",
 ];
 
+// Scrape upcoming months in addition to the requested start-date range so
+// credit cards with delayed charges (isracard/amex/visaCal/max) surface their
+// not-yet-billed transactions. The library defaults to 1; #132 needs at least
+// 3 to cover the longest delayed-charge window.
+export const FUTURE_MONTHS_TO_SCRAPE = 3;
+
 // One place that decides what a failed scrape looks like in the logs. When the
 // page told us why (a field its own form rejected), lead with that — the library
 // error underneath it is just the symptom ("Navigation timeout of 30000 ms
@@ -379,6 +385,10 @@ export function createApp({
         companyId,
         startDate: start,
         combineInstallments: false,
+        // Enrich each transaction with the bank-supplied category (isracard/amex
+        // make an extra per-transaction request; no-op for the other providers).
+        additionalTransactionInformation: true,
+        futureMonthsToScrape: FUTURE_MONTHS_TO_SCRAPE,
         showBrowser: false,
         navigationRetryCount: 3,
         args: LAUNCH_ARGS,
