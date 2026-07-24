@@ -22,6 +22,11 @@ logger = logging.getLogger(__name__)
 _SCRAPER_URL = os.getenv("SCRAPER_URL", "http://scraper:3000")
 _SCRAPER_TOKEN = os.getenv("SCRAPER_TOKEN", "")
 _SCRAPER_TZ = os.getenv("SCRAPER_TZ", "Asia/Jerusalem")
+# Per-account HTTP timeout for the scraper sidecar call. additionalTransactionInformation
+# adds ~3s per transaction (one serial extra request each), so a busy card can take
+# several minutes; the old 300s ceiling was too tight. Keep it well under the 15-minute
+# stale-run guard (mark_stale_runs) that bounds a whole sync.
+_SCRAPER_HTTP_TIMEOUT = float(os.getenv("SCRAPER_HTTP_TIMEOUT", "600"))
 
 
 def _parse_tx_date(raw_date: str) -> date | None:
@@ -72,7 +77,7 @@ def _scrape_account(credential: dict, start_date: str) -> dict:
     headers = {}
     if _SCRAPER_TOKEN:
         headers["Authorization"] = f"Bearer {_SCRAPER_TOKEN}"
-    with httpx.Client(timeout=300) as client:
+    with httpx.Client(timeout=_SCRAPER_HTTP_TIMEOUT) as client:
         resp = client.post(
             f"{_SCRAPER_URL}/scrape",
             json={"account": credential, "startDate": start_date},

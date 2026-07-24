@@ -3,6 +3,15 @@
 # New dependencies (pip/npm) require `make dev-rebuild` — a plain --build reuses
 # the stale anonymous node_modules volume below.
 services:
+  # The scraper sidecar has no watch process, so it can't hot-reload like the
+  # backend/frontend below — but building it from source here means `make dev`
+  # picks up local scraper changes on rebuild instead of running the pulled
+  # GHCR image. Edit src/ then re-run `make dev` (or `make dev-rebuild`).
+  scraper:
+    build:
+      context: ./scraper
+      dockerfile: Dockerfile
+
   backend:
     build:
       context: .
