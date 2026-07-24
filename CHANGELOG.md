@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.9.0](https://github.com/pokjay/CookieJar/compare/v0.8.1...v0.9.0) (2026-07-24)
+
+
+### Features
+
+* **scraper:** enable additionalTransactionInformation and 3 future months ([#133](https://github.com/pokjay/CookieJar/issues/133)) ([1cbf87e](https://github.com/pokjay/CookieJar/commit/1cbf87e2956f49bfafec6d40043ecb1dbc581abd)), closes [#132](https://github.com/pokjay/CookieJar/issues/132)
+
 ## [0.8.1](https://github.com/pokjay/CookieJar/compare/v0.8.0...v0.8.1) (2026-07-14)
 
 
