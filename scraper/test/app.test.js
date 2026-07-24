@@ -11,6 +11,7 @@ import { CompanyTypes } from "israeli-bank-scrapers";
 import {
   classifyError,
   createApp,
+  FUTURE_MONTHS_TO_SCRAPE,
   isFieldRejected,
   isTrackerUrl,
   LIBRARY_ERROR_TYPE_MAP,
@@ -203,6 +204,10 @@ describe("POST /scrape validation", () => {
       // over the shared hook rather than the hook itself.
       assert.equal(typeof options.preparePage, "function");
       assert.equal(options.showBrowser, false);
+      // #132: enrich transactions with the bank category and scrape upcoming
+      // months so delayed credit-card charges show up.
+      assert.equal(options.additionalTransactionInformation, true);
+      assert.equal(options.futureMonthsToScrape, FUTURE_MONTHS_TO_SCRAPE);
     });
   });
 });
