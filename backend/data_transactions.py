@@ -7,6 +7,7 @@ import pandas as pd
 from src.db.connection import is_mock_mode, run_query
 from src.db.mock_data import get_transactions
 from src.settings import load_settings
+from src.utils.accounts import apply_sign_flip as _apply_sign_flip
 
 _MONTH_NAMES = {
     1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
@@ -14,15 +15,6 @@ _MONTH_NAMES = {
 }
 
 _DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
-
-def _apply_sign_flip(df: pd.DataFrame) -> pd.DataFrame:
-    accounts = load_settings().get("sign_flipped_accounts", [])
-    if not accounts:
-        return df
-    mask = df["account"].isin(accounts)
-    df.loc[mask, "charged_amount"] = -df.loc[mask, "charged_amount"]
-    return df
 
 
 def get_travel_transactions() -> pd.DataFrame:

@@ -74,6 +74,20 @@ class TestToWealthfolioRows:
         out = to_wealthfolio_rows(_txn_df([{"charged_currency": None}]))
         assert out.iloc[0]["currency"] == "ILS"
 
+    def test_currency_symbols_normalized_to_iso_codes(self):
+        out = to_wealthfolio_rows(
+            _txn_df(
+                [
+                    {"charged_currency": "₪", "activity_date": "2026-06-01"},
+                    {"charged_currency": "ILS", "activity_date": "2026-06-02"},
+                    {"charged_currency": " ils ", "activity_date": "2026-06-03"},
+                    {"charged_currency": "", "activity_date": "2026-06-04"},
+                    {"charged_currency": "€", "activity_date": "2026-06-05"},
+                ]
+            )
+        )
+        assert out["currency"].tolist() == ["ILS", "ILS", "ILS", "ILS", "EUR"]
+
     def test_rows_sorted_by_date(self):
         out = to_wealthfolio_rows(
             _txn_df(

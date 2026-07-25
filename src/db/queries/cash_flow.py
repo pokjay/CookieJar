@@ -3,6 +3,7 @@ import pandas as pd
 from src.db.connection import is_mock_mode, run_query
 from src.db.mock_data import get_cash_flow
 from src.settings import load_settings
+from src.utils.accounts import apply_sign_flip
 
 
 def _get_cash_flow_settings() -> tuple[list[str], dict[str, str], list[str]]:
@@ -59,9 +60,7 @@ def _derive_cash_flow_from_manual(
     df["month"] = df["activity_date"].dt.month
     df["person"] = df["account"].map(account_person_mapping)
 
-    if sign_flipped_accounts:
-        mask = df["account"].isin(sign_flipped_accounts)
-        df.loc[mask, "charged_amount"] = -df.loc[mask, "charged_amount"]
+    df = apply_sign_flip(df, sign_flipped_accounts)
 
     # Derive cash flow columns from cash_flow_type. The monthly_cash_flow
     # table (and mock data) store all columns as positive magnitudes, so use
@@ -174,9 +173,7 @@ def get_cash_flow_month_detail(year: int, month: int) -> pd.DataFrame:
 
     if not df.empty:
         df["person"] = df["account"].map(account_person_mapping)
-        if sign_flipped_accounts:
-            mask = df["account"].isin(sign_flipped_accounts)
-            df.loc[mask, "charged_amount"] = -df.loc[mask, "charged_amount"]
+        df = apply_sign_flip(df, sign_flipped_accounts)
 
     return df
 

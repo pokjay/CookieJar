@@ -9,8 +9,10 @@ The ``comment`` column carries ``processed_description`` — the same string
 CookieJar's ``description_to_category`` mapping keys on — so categorization
 rules recreated in Wealthfolio match the exact text CookieJar categorized.
 
-Sign convention: ``processed_transcations_with_categories`` stores expenses
-as positive ``charged_amount`` and refunds/cashback as negative.
+Sign convention: these transforms expect expenses as positive
+``charged_amount`` and refunds/cashback as negative. That only holds *after*
+``src.utils.accounts.apply_sign_flip`` — the view itself returns raw bank
+signs, so callers must flip before passing a frame in here.
 """
 
 import re
@@ -21,6 +23,17 @@ DEFAULT_CURRENCY = "ILS"
 EXPENSE_TYPE = "WITHDRAWAL"
 REFUND_TYPES = ("CREDIT", "DEPOSIT")
 
+# Scrapers record the currency however the bank renders it, so the same account
+# can carry both "₪" and "ILS". Wealthfolio wants ISO 4217 or it will treat the
+# glyph as a separate currency that never FX-converts.
+CURRENCY_ALIASES = {
+    "₪": "ILS",
+    "NIS": "ILS",
+    "$": "USD",
+    "€": "EUR",
+    "£": "GBP",
+}
+
 EXPORT_COLUMNS = ["date", "activityType", "amount", "currency", "comment"]
 RULES_COLUMNS = [
     "processed_description",
@@ -30,6 +43,13 @@ RULES_COLUMNS = [
     "total_amount",
     "cumulative_txn_pct",
 ]
+
+
+def normalize_currency(series: pd.Series) -> pd.Series:
+    """Map bank-rendered currency values onto ISO 4217 codes."""
+    out = series.fillna(DEFAULT_CURRENCY).astype(str).str.strip()
+    out = out.mask(out.eq(""), DEFAULT_CURRENCY)
+    return out.replace(CURRENCY_ALIASES).str.upper()
 
 
 def to_wealthfolio_rows(df: pd.DataFrame, refund_type: str = "CREDIT") -> pd.DataFrame:
@@ -57,7 +77,7 @@ def to_wealthfolio_rows(df: pd.DataFrame, refund_type: str = "CREDIT") -> pd.Dat
             "date": pd.to_datetime(df["activity_date"]).dt.strftime("%Y-%m-%d"),
             "activityType": activity_type,
             "amount": df["charged_amount"].abs(),
-            "currency": df["charged_currency"].fillna(DEFAULT_CURRENCY),
+            "currency": normalize_currency(df["charged_currency"]),
             "comment": comment,
         }
     )

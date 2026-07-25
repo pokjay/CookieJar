@@ -22,6 +22,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.db.queries.transactions import get_all_transactions  # noqa: E402
+from src.settings import load_settings  # noqa: E402
+from src.utils.accounts import apply_sign_flip  # noqa: E402
 from src.utils.wealthfolio_export import (  # noqa: E402
     REFUND_TYPES,
     account_filename,
@@ -53,7 +55,16 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    df = get_all_transactions()
+    # get_all_transactions() returns raw bank signs; the dashboard applies this
+    # in backend/routers/transactions.py, so the export must too or reversed
+    # accounts land in Wealthfolio as income.
+    flipped = load_settings().get("sign_flipped_accounts", [])
+    df = apply_sign_flip(get_all_transactions(), flipped)
+    if flipped:
+        print(f"Sign-flipped accounts applied: {', '.join(sorted(flipped))}")
+    else:
+        print("No sign_flipped_accounts configured — exporting raw signs.")
+
     if args.account:
         unknown = set(args.account) - set(df["account"])
         if unknown:
