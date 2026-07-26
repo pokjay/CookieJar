@@ -7,6 +7,7 @@ import type {
   AvgMonthly,
   NetWorthPoint,
   NetWorthByCategoryPoint,
+  AccountBalancePoint,
   CashFlowYearly,
   CashFlowMonthly,
   CashFlowMeta,
@@ -79,6 +80,10 @@ export function getNetWorthByCategory(
 ): Promise<NetWorthByCategoryPoint[]> {
   const q = person ? `?person=${encodeURIComponent(person)}` : "";
   return fetchJson(`/api/overview/net-worth-by-category${q}`);
+}
+
+export function getAccountsOverTime(): Promise<AccountBalancePoint[]> {
+  return fetchJson("/api/overview/accounts-over-time");
 }
 
 export function getCashFlowYearly(

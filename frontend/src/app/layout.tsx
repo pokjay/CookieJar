@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Manrope } from "next/font/google";
+import { Inter, Manrope, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/AppShell";
 import AuthSessionProvider from "@/components/AuthSessionProvider";
@@ -10,6 +10,11 @@ const manrope = Manrope({
   subsets: ["latin"],
   weight: ["500", "700", "800"],
   variable: "--font-manrope",
+});
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-plex-mono",
 });
 
 export const metadata: Metadata = {
@@ -34,7 +39,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} ${manrope.variable} bg-cj-bg text-cj-text`}>
+      <body className={`${inter.className} ${manrope.variable} ${plexMono.variable} bg-cj-bg text-cj-text`}>
         <ThemeProvider>
           <AuthSessionProvider>
             <AppShell>{children}</AppShell>

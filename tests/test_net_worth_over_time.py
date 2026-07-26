@@ -12,6 +12,7 @@ import pandas as pd
 
 from backend.data import (
     forward_fill_account_balances,
+    get_net_worth_by_account_over_time,
     get_net_worth_by_category_over_time,
     get_net_worth_over_time,
 )
@@ -43,6 +44,7 @@ def _accounts(rows: list[tuple]) -> pd.DataFrame:
                 "person": row[1],
                 "account_type_category": row[2],
                 "is_active": row[3] if len(row) > 3 else True,
+                "company": row[4] if len(row) > 4 else "Acme",
             }
             for row in rows
         ]
@@ -273,3 +275,54 @@ class TestGetNetWorthByCategoryOverTime:
         # After the switch, only the new fund — before the fix these were 205 / 210.
         assert by_date[pd.Timestamp("2025-03-01")] == 105.0
         assert by_date[pd.Timestamp("2025-04-01")] == 110.0
+
+
+class TestGetNetWorthByAccountOverTime:
+    def test_keeps_each_account_separate(self):
+        tracking = _tracking(
+            [
+                (1, "2025-01-01", 100.0),
+                (2, "2025-01-15", 50.0),
+                (1, "2025-02-01", 110.0),
+            ]
+        )
+        accounts = _accounts(
+            [
+                (1, "Alice", "השקעות", True, "Meitav"),
+                (2, "Alice", "פנסיה", True, "Menora"),
+            ]
+        )
+        with _patch_mock_data(tracking, accounts):
+            result = get_net_worth_by_account_over_time()
+
+        assert list(result.columns) == [
+            "activity_date",
+            "account_id",
+            "person",
+            "company",
+            "account_type_category",
+            "amount",
+        ]
+        # Jan 15 carries account 1's Jan 1 balance rather than dropping it.
+        jan15 = result[result["activity_date"] == pd.Timestamp("2025-01-15")]
+        assert dict(zip(jan15["account_id"], jan15["amount"])) == {1: 100.0, 2: 50.0}
+
+    def test_closed_account_stops_after_its_last_record(self):
+        tracking = _tracking(
+            [
+                (1, "2025-01-01", 100.0),
+                (1, "2025-02-01", 100.0),
+                (2, "2025-03-01", 105.0),
+            ]
+        )
+        accounts = _accounts(
+            [
+                (1, "Gomez", "קרן השתלמות", False, "Altshuler"),
+                (2, "Gomez", "קרן השתלמות", True, "Meitav"),
+            ]
+        )
+        with _patch_mock_data(tracking, accounts):
+            result = get_net_worth_by_account_over_time()
+
+        march = result[result["activity_date"] == pd.Timestamp("2025-03-01")]
+        assert dict(zip(march["account_id"], march["amount"])) == {2: 105.0}

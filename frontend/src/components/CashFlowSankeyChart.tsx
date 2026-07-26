@@ -18,6 +18,7 @@ function buildOptions(
   expandedSet: Set<string>,
   year: number,
   isDark: boolean,
+  showTitle: boolean,
 ) {
   const nodeColors: Record<string, string> = {};
   let catIdx = 0;
@@ -48,15 +49,17 @@ function buildOptions(
   }));
 
   return {
-    title: {
-      text: `Yearly Cash Flow — ${year}`,
-      left: "center",
-      textStyle: {
-        color: isDark ? "#9CA3AF" : "#7a5a40",
-        fontSize: 13,
-        fontWeight: 500,
-      },
-    },
+    title: showTitle
+      ? {
+          text: `Yearly Cash Flow — ${year}`,
+          left: "center",
+          textStyle: {
+            color: isDark ? "#9CA3AF" : "#7a5a40",
+            fontSize: 13,
+            fontWeight: 500,
+          },
+        }
+      : undefined,
     tooltip: {
       trigger: "item",
       triggerOn: "mousemove",
@@ -94,6 +97,8 @@ interface CashFlowSankeyChartProps {
   year: number;
   expandedCategories: Set<string>;
   onToggleCategory: (name: string) => void;
+  /** Render the chart alone, for callers that supply their own card and heading. */
+  bare?: boolean;
 }
 
 export default function CashFlowSankeyChart({
@@ -101,6 +106,7 @@ export default function CashFlowSankeyChart({
   year,
   expandedCategories,
   onToggleCategory,
+  bare = false,
 }: CashFlowSankeyChartProps) {
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme !== "light";
@@ -122,17 +128,30 @@ export default function CashFlowSankeyChart({
   );
 
   const options = useMemo(
-    () => data ? buildOptions(data, expandableSet, expandedCategories, year, isDark) : null,
-    [data, expandableSet, expandedCategories, year, isDark],
+    () =>
+      data ? buildOptions(data, expandableSet, expandedCategories, year, isDark, !bare) : null,
+    [data, expandableSet, expandedCategories, year, isDark, bare],
   );
 
   if (!data) return null;
 
   if (!data.nodes.length) {
     return (
-      <div className="bg-cj-surface border border-cj-border rounded-xl p-6 flex items-center justify-center h-48">
+      <div
+        className={
+          bare
+            ? "flex h-48 items-center justify-center"
+            : "bg-cj-surface border border-cj-border rounded-xl p-6 flex items-center justify-center h-48"
+        }
+      >
         <p className="text-cj-text-faint text-sm">No data available for this year.</p>
       </div>
+    );
+  }
+
+  if (bare) {
+    return (
+      <ReactECharts option={options!} style={{ height: "500px" }} onEvents={onEvents} notMerge />
     );
   }
 

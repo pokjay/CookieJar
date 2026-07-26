@@ -27,6 +27,15 @@ export interface NetWorthByCategoryPoint {
   amount: number;
 }
 
+export interface AccountBalancePoint {
+  activity_date: string;
+  account_id: number;
+  name: string;
+  person: string;
+  category: string;
+  amount: number;
+}
+
 export interface CashFlowYearly {
   year: number;
   income: number;
