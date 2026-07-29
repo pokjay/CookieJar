@@ -17,7 +17,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "ruff>=0.15.16",
+    "ruff>=0.16.0",
     "ipdb>=0.13.13",
     "pytest>=9.1.0",
 ]
