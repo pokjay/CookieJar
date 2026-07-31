@@ -144,21 +144,43 @@ export function traceMode(value = process.env.SCRAPER_TRACE) {
   return "first-party";
 }
 
+// Every line this service emits carries a wall-clock timestamp. Without one the
+// trace records ORDER but not TIME, and the questions a failed scrape actually
+// raises are all about time: how far apart two providers ran, how long a card
+// had been hammering an endpoint before it was rate-limited, whether a gap is
+// the library's inter-batch sleep or a stalled page. Diagnosing #149 ran into
+// exactly that wall — request counts were recoverable from the log, elapsed
+// time was not.
+//
+// Absolute ISO-8601 rather than milliseconds-since-scrape-start: these lines
+// land in `docker compose logs` interleaved with the backend's, and only a
+// shared clock lets the two be lined up.
+//
+// A timestamp is metadata, never URL/header/body content, so this stays inside
+// the origin+path-only rule that traceUrl enforces.
+export function withTimestamp(log, clock = () => new Date().toISOString()) {
+  return (format, ...args) => log(`%s ${format}`, clock(), ...args);
+}
+
+// The default sink, used by the call sites that don't take an injectable log.
+const stampedConsole = withTimestamp(console.error);
+
 export function attachTrace(page, log = console.error, mode = traceMode()) {
   if (mode === "off") return;
   const skip = (url) => mode !== "full" && isTrackerUrl(url);
+  const out = withTimestamp(log);
 
   page.on("framenavigated", (frame) => {
     if (skip(frame.url())) return;
-    log("[trace] nav  %s", traceUrl(frame.url()));
+    out("[trace] nav  %s", traceUrl(frame.url()));
   });
   page.on("request", (req) => {
     if (!TRACED_RESOURCE_TYPES.has(req.resourceType()) || skip(req.url())) return;
-    log("[trace] ->   %s %s", req.method(), traceUrl(req.url()));
+    out("[trace] ->   %s %s", req.method(), traceUrl(req.url()));
   });
   page.on("response", (res) => {
     if (!TRACED_RESOURCE_TYPES.has(res.request().resourceType()) || skip(res.url())) return;
-    log("[trace] <- %d %s", res.status(), traceUrl(res.url()));
+    out("[trace] <- %d %s", res.status(), traceUrl(res.url()));
   });
 }
 
@@ -192,6 +214,7 @@ export function isFieldRejected(state) {
 // Polls the login field's validity. Reads only the value's LENGTH and Angular's
 // validity class — never the value, which is a live credential.
 export function watchLoginForm(page, guard, diagnostics, log = console.error) {
+  const out = withTimestamp(log);
   let previous = null;
   const timer = setInterval(async () => {
     const frame = page.frames().find((f) => f.url().includes(guard.frameUrlIncludes));
@@ -217,7 +240,7 @@ export function watchLoginForm(page, guard, diagnostics, log = console.error) {
       // whether the site ever accepted the credential we typed.
       const line = `${guard.field} length=${state.length} accepted=${!state.invalid}`;
       if (line !== previous && traceMode() !== "off") {
-        log("[form] %s", line);
+        out("[form] %s", line);
         previous = line;
       }
     } catch {
@@ -289,13 +312,14 @@ export const FUTURE_MONTHS_TO_SCRAPE = 3;
 // error underneath it is just the symptom ("Navigation timeout of 30000 ms
 // exceeded" for a login that was never submitted). log is injectable for tests.
 export function logFailure(companyId, errorType, diagnostics, err, result, log = console.error) {
+  const out = withTimestamp(log);
   // A guard whose site internals rotted (Cal redesigns, the selector or frame
   // URL stops matching) would otherwise fail silently — failures would regress
   // to the bare generic-error this guard exists to explain, while the logs
   // suggest it is still covering us.
   const guard = LOGIN_FORM_GUARDS[companyId];
   if (guard && diagnostics && !diagnostics.fieldObserved) {
-    log(
+    out(
       "[scrape %s] the login-form guard never observed its field (%s in a %s frame) — the site's layout may have changed and the guard may be stale",
       companyId,
       guard.selector,
@@ -304,7 +328,7 @@ export function logFailure(companyId, errorType, diagnostics, err, result, log =
   }
   const rejected = diagnostics?.rejectedField;
   if (rejected) {
-    log(
+    out(
       "[scrape %s] the site's own login form rejected the %s — %s. No login request was ever sent. → reported as %s",
       companyId,
       rejected.field,
@@ -314,9 +338,9 @@ export function logFailure(companyId, errorType, diagnostics, err, result, log =
     // Keep the evidence underneath: if what failed was actually something else
     // entirely (a crash, a network error), its message and stack must not vanish
     // behind the rejection message.
-    if (err) log("[scrape %s] underlying error:", companyId, err);
+    if (err) out("[scrape %s] underlying error:", companyId, err);
     if (result) {
-      log(
+      out(
         "[scrape %s] underlying result: errorType=%s, errorMessage=%s",
         companyId,
         result.errorType,
@@ -326,10 +350,10 @@ export function logFailure(companyId, errorType, diagnostics, err, result, log =
     return;
   }
   if (err) {
-    log("[scrape %s] scrape threw (%s):", companyId, errorType, err);
+    out("[scrape %s] scrape threw (%s):", companyId, errorType, err);
     return;
   }
-  log(
+  out(
     "[scrape %s] scrape unsuccessful (errorType=%s, errorMessage=%s) → reported as %s",
     companyId,
     result.errorType,
@@ -395,7 +419,7 @@ export function createApp({
         preparePage: (page) => preparePage(page, { companyId, diagnostics }),
       });
     } catch (err) {
-      console.error("[scrape %s] createScraper failed:", companyId, err);
+      stampedConsole("[scrape %s] createScraper failed:", companyId, err);
       return res.status(400).json({ errorType: "generic-error", transactions: [] });
     }
 
