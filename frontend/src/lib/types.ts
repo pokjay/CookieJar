@@ -390,6 +390,8 @@ export interface ScraperStatus {
 export interface ScraperSyncPayload {
   db_password: string;
   lookback_days: number;
+  /** Vault UUIDs to scrape. Omit to scrape every account in the vault. */
+  account_uuids?: string[];
 }
 
 export interface ScraperAddAccountPayload {

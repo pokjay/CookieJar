@@ -1,8 +1,25 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { getScraperStatus, triggerSync, ApiError } from "@/lib/api";
-import type { ScraperStatus } from "@/lib/types";
+import { getScraperStatus, listScraperAccounts, triggerSync, ApiError } from "@/lib/api";
+import type { ScraperAccount, ScraperStatus } from "@/lib/types";
+import { PROVIDER_LABELS } from "@/lib/constants";
+
+function apiErrorMessage(e: unknown): string {
+  if (e instanceof ApiError) {
+    switch (e.status) {
+      case 401:
+        return "Wrong vault password.";
+      case 404:
+        return "Vault not found. Initialize it in Settings → Bank Accounts.";
+      case 429:
+        return "Too many failed password attempts. Try again in a minute.";
+      default:
+        return e.message;
+    }
+  }
+  return e instanceof Error ? e.message : String(e);
+}
 
 // ── SyncModal ─────────────────────────────────────────────────────────────────
 
@@ -11,12 +28,48 @@ function SyncModal({
   onCancel,
   busy,
 }: {
-  onSync: (password: string, lookbackDays: number) => void;
+  onSync: (password: string, lookbackDays: number, accountUuids?: string[]) => void;
   onCancel: () => void;
   busy: boolean;
 }) {
   const [pw, setPw] = useState("");
   const [days, setDays] = useState(30);
+  // null until the user opts into picking accounts. Listing them needs the
+  // vault password, and a wrong one spends the backend's failed-attempt budget
+  // — so it happens on an explicit click, never per keystroke.
+  const [accounts, setAccounts] = useState<ScraperAccount[] | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
+  const [accountsError, setAccountsError] = useState<string | null>(null);
+
+  const picking = accounts !== null;
+  // Sending undefined (rather than every uuid) keeps the default path on the
+  // API's "all accounts" branch, so it behaves identically to before.
+  const selection = picking ? [...selected] : undefined;
+  const canSync = Boolean(pw) && !busy && (!picking || selected.size > 0);
+
+  async function loadAccounts() {
+    setLoadingAccounts(true);
+    setAccountsError(null);
+    try {
+      const list = await listScraperAccounts(pw);
+      setAccounts(list);
+      setSelected(new Set(list.map((a) => a.uuid)));
+    } catch (e: unknown) {
+      setAccountsError(apiErrorMessage(e));
+    } finally {
+      setLoadingAccounts(false);
+    }
+  }
+
+  function toggle(uuid: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(uuid)) next.delete(uuid);
+      else next.add(uuid);
+      return next;
+    });
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -25,7 +78,9 @@ function SyncModal({
         <div>
           <h3 className="text-base font-semibold text-cj-text">Sync Bank Transactions</h3>
           <p className="text-sm text-cj-text-muted mt-1">
-            Enter your vault password to fetch transactions from all linked accounts.
+            {picking
+              ? "Choose which accounts to fetch transactions from."
+              : "Enter your vault password to fetch transactions from all linked accounts."}
           </p>
         </div>
 
@@ -40,7 +95,7 @@ function SyncModal({
             value={pw}
             disabled={busy}
             onChange={(e) => setPw(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && pw && !busy && onSync(pw, days)}
+            onKeyDown={(e) => e.key === "Enter" && canSync && onSync(pw, days, selection)}
             className="w-full bg-cj-elevated border border-cj-border-strong rounded-lg px-3 py-2 text-sm text-cj-text focus:outline-none focus:ring-2 focus:ring-cj-accent disabled:opacity-50"
           />
         </div>
@@ -61,6 +116,56 @@ function SyncModal({
           <p className="text-xs text-cj-text-faint mt-1">1–90 days</p>
         </div>
 
+        <div>
+          <label className="block text-xs font-medium text-cj-text-muted uppercase tracking-wide mb-1">
+            Accounts
+          </label>
+
+          {!picking ? (
+            <button
+              disabled={!pw || busy || loadingAccounts}
+              onClick={loadAccounts}
+              className="w-full text-left px-3 py-2 rounded-lg bg-cj-elevated border border-cj-border-strong hover:bg-cj-hover disabled:opacity-40 disabled:cursor-not-allowed text-sm text-cj-text-3 transition-colors"
+            >
+              {loadingAccounts ? "Loading accounts…" : "All accounts — choose specific ones…"}
+            </button>
+          ) : accounts.length === 0 ? (
+            <p className="text-sm text-cj-text-faint">
+              No accounts in vault. Add one in Settings → Bank Accounts.
+            </p>
+          ) : (
+            <div className="max-h-48 overflow-y-auto rounded-lg bg-cj-elevated border border-cj-border-strong divide-y divide-cj-border">
+              {accounts.map((acct) => (
+                <label
+                  key={acct.uuid}
+                  className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-cj-hover transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(acct.uuid)}
+                    disabled={busy}
+                    onChange={() => toggle(acct.uuid)}
+                    className="shrink-0 accent-cj-accent"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm text-cj-text-2 truncate">{acct.title}</span>
+                    <span className="block text-xs text-cj-text-faint">
+                      {PROVIDER_LABELS[acct.provider] ?? acct.provider}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+
+          {!pw && !picking && (
+            <p className="text-xs text-cj-text-faint mt-1">
+              Enter the vault password first to list accounts.
+            </p>
+          )}
+          {accountsError && <p className="text-xs text-cj-negative mt-1">{accountsError}</p>}
+        </div>
+
         <div className="flex gap-3 justify-end pt-1">
           <button
             onClick={onCancel}
@@ -70,11 +175,15 @@ function SyncModal({
             Cancel
           </button>
           <button
-            disabled={!pw || busy}
-            onClick={() => onSync(pw, days)}
+            disabled={!canSync}
+            onClick={() => onSync(pw, days, selection)}
             className="px-4 py-2 rounded-lg bg-cj-accent hover:bg-cj-accent-hover disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium text-white transition-colors"
           >
-            {busy ? "Starting…" : "Sync Now"}
+            {busy
+              ? "Starting…"
+              : picking
+              ? `Sync ${selected.size} of ${accounts.length}`
+              : "Sync Now"}
           </button>
         </div>
       </div>
@@ -176,11 +285,15 @@ export default function SyncButton() {
 
   useEffect(() => () => stopPolling(), []);
 
-  async function handleSync(password: string, lookbackDays: number) {
+  async function handleSync(password: string, lookbackDays: number, accountUuids?: string[]) {
     setBusy(true);
     setError(null);
     try {
-      await triggerSync({ db_password: password, lookback_days: lookbackDays });
+      await triggerSync({
+        db_password: password,
+        lookback_days: lookbackDays,
+        ...(accountUuids ? { account_uuids: accountUuids } : {}),
+      });
       setShowModal(false);
       await fetchStatus();
       startPolling();
@@ -188,7 +301,8 @@ export default function SyncButton() {
       if (e instanceof ApiError) {
         switch (e.status) {
           case 401:
-            setError("Wrong vault password.");
+          case 429:
+            setError(apiErrorMessage(e));
             break;
           case 409:
             setError("A sync is already running.");
@@ -197,18 +311,18 @@ export default function SyncButton() {
             startPolling();
             break;
           case 422:
-            setError("No accounts in vault. Add accounts in Settings → Bank Accounts.");
+            // Either the vault is empty or the picked accounts went away
+            // (deleted in another tab since the list was loaded). The backend's
+            // detail distinguishes them; it names no account titles.
+            setError(e.message || "No accounts to sync.");
             setShowModal(false);
-            break;
-          case 429:
-            setError("Too many failed password attempts. Try again in a minute.");
             break;
           default:
             setError(e.message);
             setShowModal(false);
         }
       } else {
-        setError(e instanceof Error ? e.message : String(e));
+        setError(apiErrorMessage(e));
         setShowModal(false);
       }
     } finally {

@@ -181,10 +181,126 @@ def test_sync_stale_run_cleared_lets_a_new_sync_start():
         patch.object(scraper_router, "is_mock_mode", return_value=False),
         patch.object(scraper_router, "mark_stale_runs") as mark_stale_runs,
         patch.object(scraper_router, "has_running_run", return_value=False),
-        patch.object(scraper_router, "get_credentials", return_value=[{"companyId": "isracard"}]),
+        patch.object(
+            scraper_router,
+            "get_credentials",
+            return_value=[{"uuid": "u1", "companyId": "isracard"}],
+        ),
         patch.object(scraper_router, "insert_run", return_value="run-123"),
     ):
         result = scraper_router.scraper_sync(payload, BackgroundTasks(), _fake_request())
 
     mark_stale_runs.assert_called_once()
     assert result == {"run_id": "run-123"}
+
+
+# ── /sync scrapes only the selected accounts (#150) ──────────────────────────
+
+_VAULT = [
+    {"uuid": "u-cal", "companyId": "visaCal", "accountTitle": "Cal", "credentials": {}},
+    {"uuid": "u-amex", "companyId": "amex", "accountTitle": "Amex", "credentials": {}},
+    {"uuid": "u-max", "companyId": "max", "accountTitle": "Max", "credentials": {}},
+]
+
+
+def _run_sync_dispatch(payload, credentials=None):
+    """Drive /sync to a successful dispatch and return the credentials the
+    background run_sync task was handed."""
+    tasks = BackgroundTasks()
+    with (
+        patch.object(scraper_router, "is_mock_mode", return_value=False),
+        patch.object(scraper_router, "mark_stale_runs"),
+        patch.object(scraper_router, "has_running_run", return_value=False),
+        patch.object(scraper_router, "get_credentials", return_value=list(credentials or _VAULT)),
+        patch.object(scraper_router, "insert_run", return_value="run-1"),
+    ):
+        scraper_router.scraper_sync(payload, tasks, _fake_request())
+    assert len(tasks.tasks) == 1
+    dispatched, _run_id, _lookback = tasks.tasks[0].args
+    return dispatched
+
+
+def test_sync_without_a_selection_still_scrapes_every_account():
+    """Back-compat: a client that doesn't know about account_uuids (or a user
+    who never opens the picker) must keep getting a whole-vault sync."""
+    payload = scraper_router.SyncPayload(db_password="pw", lookback_days=7)
+    dispatched = _run_sync_dispatch(payload)
+    assert [c["uuid"] for c in dispatched] == ["u-cal", "u-amex", "u-max"]
+
+
+def test_sync_scrapes_only_the_selected_accounts():
+    """The point of #150: after amex succeeds, a retry must be able to leave it
+    alone rather than re-hammering the shared Isracard-group rate limiter."""
+    payload = scraper_router.SyncPayload(
+        db_password="pw", lookback_days=7, account_uuids=["u-cal", "u-max"]
+    )
+    dispatched = _run_sync_dispatch(payload)
+    assert [c["uuid"] for c in dispatched] == ["u-cal", "u-max"]
+
+
+def test_sync_selection_order_follows_the_vault_not_the_request():
+    """Scrape order is the vault's, so a caller can't reorder providers by
+    shuffling the request — keeping runs reproducible."""
+    payload = scraper_router.SyncPayload(
+        db_password="pw", lookback_days=7, account_uuids=["u-max", "u-cal"]
+    )
+    dispatched = _run_sync_dispatch(payload)
+    assert [c["uuid"] for c in dispatched] == ["u-cal", "u-max"]
+
+
+def test_sync_with_an_empty_selection_is_422_and_never_scrapes_everything():
+    """An empty list is a caller mistake, not a shorthand for 'all'. Falling
+    back to the whole vault here is the one outcome that must never happen."""
+    payload = scraper_router.SyncPayload(db_password="pw", lookback_days=7, account_uuids=[])
+    tasks = BackgroundTasks()
+    with (
+        patch.object(scraper_router, "is_mock_mode", return_value=False),
+        patch.object(scraper_router, "mark_stale_runs"),
+        patch.object(scraper_router, "has_running_run", return_value=False),
+        patch.object(scraper_router, "get_credentials", return_value=list(_VAULT)),
+        patch.object(scraper_router, "insert_run") as insert_run,
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            scraper_router.scraper_sync(payload, tasks, _fake_request())
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "No accounts selected."
+    insert_run.assert_not_called()
+    assert tasks.tasks == []
+
+
+def test_sync_with_an_unknown_uuid_422s_before_inserting_a_run():
+    """An account deleted since the picker loaded must fail fast, not leave a
+    'running' row behind that scrapes a silently truncated set."""
+    payload = scraper_router.SyncPayload(
+        db_password="pw", lookback_days=7, account_uuids=["u-cal", "u-gone"]
+    )
+    tasks = BackgroundTasks()
+    with (
+        patch.object(scraper_router, "is_mock_mode", return_value=False),
+        patch.object(scraper_router, "mark_stale_runs"),
+        patch.object(scraper_router, "has_running_run", return_value=False),
+        patch.object(scraper_router, "get_credentials", return_value=list(_VAULT)),
+        patch.object(scraper_router, "insert_run") as insert_run,
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            scraper_router.scraper_sync(payload, tasks, _fake_request())
+
+    assert exc_info.value.status_code == 422
+    insert_run.assert_not_called()
+    assert tasks.tasks == []
+
+
+def test_sync_selection_error_reports_a_count_not_account_titles():
+    """Vault titles are user data and this response crosses the API boundary."""
+    with pytest.raises(HTTPException) as exc_info:
+        scraper_router._select_accounts(_VAULT, ["u-gone", "u-also-gone"])
+
+    detail = exc_info.value.detail
+    assert "2" in detail
+    for account in _VAULT:
+        assert account["accountTitle"] not in detail
+
+
+def test_select_accounts_none_returns_every_account_unchanged():
+    assert scraper_router._select_accounts(_VAULT, None) == _VAULT

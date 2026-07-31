@@ -89,7 +89,13 @@ def list_accounts(db_password: str) -> list[dict[str, Any]]:
 
 
 def get_credentials(db_password: str) -> list[dict[str, Any]]:
-    """Return full credentials for sync. Keep this result short-lived."""
+    """Return full credentials for sync. Keep this result short-lived.
+
+    Carries the same "uuid" as list_accounts() so a caller can narrow a sync to
+    specific accounts (see _select_accounts in backend/routers/scraper.py).
+    Titles can't serve that purpose: they are neither unique nor stable across
+    a rename, and selecting the wrong entry here means scraping the wrong bank.
+    """
     with _vault_lock:
         kp = _open(db_password)
         result = []
@@ -99,6 +105,7 @@ def get_credentials(db_password: str) -> list[dict[str, Any]]:
             credentials = {k: v for k, v in custom.items() if k != "provider"}
             result.append(
                 {
+                    "uuid": str(entry.uuid),
                     "companyId": provider,
                     "accountTitle": entry.title,
                     "credentials": credentials,

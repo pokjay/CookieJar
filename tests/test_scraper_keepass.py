@@ -31,6 +31,50 @@ def vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return vault_path
 
 
+def test_get_credentials_uuids_match_list_accounts(vault: Path):
+    """Selective sync (#150) picks accounts by the uuid the UI got from
+    list_accounts(), and the router matches it against get_credentials(). If the
+    two ever stopped agreeing, a selection would silently scrape nothing — or,
+    worse, the wrong entry."""
+    first = scraper_keepass.add_account(
+        title="Shared Title",
+        provider="isracard",
+        credential_fields={"id": "1", "card6Digits": "111111", "password": "a"},
+        db_password="master-pw",
+    )
+    second = scraper_keepass.add_account(
+        title="Shared Title",  # deliberately identical — titles are not unique
+        provider="max",
+        credential_fields={"username": "u", "password": "b"},
+        db_password="master-pw",
+    )
+
+    listed = {a["uuid"] for a in scraper_keepass.list_accounts("master-pw")}
+    creds = scraper_keepass.get_credentials("master-pw")
+
+    assert listed == {first, second}
+    assert {c["uuid"] for c in creds} == listed
+    # The uuid is what tells two same-titled accounts apart.
+    by_uuid = {c["uuid"]: c["companyId"] for c in creds}
+    assert by_uuid[first] == "isracard"
+    assert by_uuid[second] == "max"
+
+
+def test_get_credentials_uuid_survives_a_rename(vault: Path):
+    """A selection made before a rename must still resolve afterwards."""
+    uuid_str = scraper_keepass.add_account(
+        title="Old Name",
+        provider="visaCal",
+        credential_fields={"username": "u", "password": "p"},
+        db_password="master-pw",
+    )
+    scraper_keepass.update_account(uuid_str, db_password="master-pw", title="New Name")
+
+    creds = scraper_keepass.get_credentials("master-pw")
+    assert [c["uuid"] for c in creds] == [uuid_str]
+    assert creds[0]["accountTitle"] == "New Name"
+
+
 def test_update_account_provider_change_removes_stale_credential_fields(vault: Path):
     uuid_str = scraper_keepass.add_account(
         title="My Isracard",
