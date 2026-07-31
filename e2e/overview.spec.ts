@@ -23,11 +23,18 @@ test.describe("Overview page", () => {
       await expect(page.getByTestId("metric-total-value")).toHaveText(EXPECTED.total);
     });
 
-    test("'vs invested' mode adds a second series", async ({ page }) => {
+    test("'By type' mode stacks a band per account type", async ({ page }) => {
       const paths = page.getByTestId("chart-networth").locator("svg path");
       const before = await paths.count();
-      await page.getByRole("button", { name: "vs invested" }).click();
-      await expect(paths).toHaveCount(before + 1);
+      await page
+        .getByRole("group", { name: "Net worth view" })
+        .getByRole("button", { name: "By type" })
+        .click();
+      // Every type contributes a filled band plus its own top edge.
+      await expect(paths).toHaveCount(before + EXPECTED.accountTypes.length * 2 - 2);
+      for (const type of EXPECTED.accountTypes) {
+        await expect(page.getByTestId(`chart-legend-${type}`)).toBeVisible();
+      }
     });
   });
 
@@ -43,6 +50,25 @@ test.describe("Overview page", () => {
       await expect(group).toHaveAttribute("aria-expanded", "false");
       await group.click();
       await expect(group).toHaveAttribute("aria-expanded", "true");
+    });
+
+    test("rows are grouped by account type by default", async ({ page }) => {
+      await page.getByTestId("account-group-Morticia").click();
+      await expect(page.getByTestId("account-row-Morticia::Pension")).toBeVisible();
+      // Per-provider rows ("Pension · Migdal") only appear in the by-account view.
+      await expect(page.getByTestId(/^account-row-Morticia::acct-/)).toHaveCount(0);
+    });
+
+    test("switching to 'By account' restores the per-provider rows", async ({ page }) => {
+      await page.getByTestId("account-group-Morticia").click();
+      await page
+        .getByRole("group", { name: "Accounts grouping" })
+        .getByRole("button", { name: "By account" })
+        .click();
+      await expect(page.getByTestId("account-row-Morticia::Pension")).toHaveCount(0);
+      await expect(
+        page.getByTestId(/^account-row-Morticia::acct-/).filter({ hasText: "Pension · " }).first()
+      ).toBeVisible();
     });
   });
 

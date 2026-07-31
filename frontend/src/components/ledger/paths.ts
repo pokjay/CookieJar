@@ -39,6 +39,31 @@ export function areaPath(
   return `${linePath(values, min, max, height, pad, width)} L${width} ${height} L0 ${height} Z`;
 }
 
+/** Closed path between two series — one stacked band.
+ *
+ * Runs left-to-right along `upper`, then back along `lower`, so bands never
+ * overlap and can be filled semi-transparently without colours compounding.
+ */
+export function bandPath(
+  upper: number[],
+  lower: number[],
+  min: number,
+  max: number,
+  height = 300,
+  pad = 14,
+  width = 1000
+): string {
+  const n = upper.length;
+  if (n < 2) return "";
+  let d = linePath(upper, min, max, height, pad, width);
+  for (let i = n - 1; i >= 0; i--) {
+    const x = (i / (n - 1)) * width;
+    const y = yAt(lower[i] ?? 0, min, max, height, pad);
+    d += ` L${x.toFixed(1)} ${y.toFixed(1)}`;
+  }
+  return `${d} Z`;
+}
+
 export function extent(values: number[]): [number, number] {
   if (!values.length) return [0, 1];
   return [Math.min(...values), Math.max(...values)];

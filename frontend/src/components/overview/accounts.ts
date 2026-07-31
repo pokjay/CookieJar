@@ -88,11 +88,78 @@ export function buildAccountsData(points: AccountBalancePoint[]): AccountsData {
   return { monthKeys, accounts, total, invested, persons };
 }
 
+/** One account type (Pension, Hishtalmut, …) with its member accounts summed. */
+export interface CategorySeries {
+  category: string;
+  accountCount: number;
+  /** Element-wise sum of the member accounts' values. */
+  values: number[];
+  balance: number;
+}
+
+/** Draw order for the stacked net-worth chart, bottom band first.
+ *
+ * Fixed rather than sorted by size so a type keeps its colour and its place in
+ * the stack as balances move. The five hues alternate cool/warm because the
+ * bands sit edge to edge — see `--fx-at-*` in globals.css.
+ */
+export const ACCOUNT_TYPE_ORDER = [
+  "Investments",
+  "Pension",
+  "Hishtalmut",
+  "Rainy Day Fund",
+  "Bank Account",
+];
+
+export function accountTypeColor(category: string): string {
+  const i = ACCOUNT_TYPE_ORDER.indexOf(category);
+  return i < 0 ? "var(--fx-ink-3)" : `var(--fx-at-${i + 1})`;
+}
+
+/** Sorts category series into `ACCOUNT_TYPE_ORDER`, unknown types last. */
+export function orderByAccountType(groups: CategorySeries[]): CategorySeries[] {
+  const rank = (c: string) => {
+    const i = ACCOUNT_TYPE_ORDER.indexOf(c);
+    return i < 0 ? ACCOUNT_TYPE_ORDER.length : i;
+  };
+  return [...groups].sort((a, b) => rank(a.category) - rank(b.category));
+}
+
+/** Collapses a person's accounts onto one series per account type. */
+export function groupByCategory(accounts: AccountSeries[], monthCount: number): CategorySeries[] {
+  const byCategory = new Map<string, CategorySeries>();
+
+  for (const account of accounts) {
+    let group = byCategory.get(account.category);
+    if (!group) {
+      group = {
+        category: account.category,
+        accountCount: 0,
+        values: new Array(monthCount).fill(0),
+        balance: 0,
+      };
+      byCategory.set(account.category, group);
+    }
+    group.accountCount += 1;
+    for (let i = 0; i < monthCount; i++) group.values[i] += account.values[i] ?? 0;
+  }
+
+  return [...byCategory.values()]
+    .map((g) => ({ ...g, balance: g.values[monthCount - 1] ?? 0 }))
+    .sort((a, b) => b.balance - a.balance);
+}
+
+/** Month-end points each range covers — one more than its span, so "6M" spans
+ * six intervals. YTD is derived from the calendar; ALL never trims. */
 export const RANGES: Record<RangeKey, number> = {
+  "1M": 2,
+  "3M": 4,
   "6M": 7,
   YTD: 0,
   "1Y": 13,
   "3Y": 37,
+  "5Y": 61,
+  ALL: Infinity,
 };
 
 /** Index into the month arrays where the selected range starts. */

@@ -35,26 +35,45 @@ import {
 import { paddedExtent } from "@/components/ledger/paths";
 import { useIsCompact } from "@/components/ledger/useIsCompact";
 import AccountsByPerson from "@/components/overview/AccountsByPerson";
-import { buildAccountsData, rangeStart } from "@/components/overview/accounts";
+import {
+  accountTypeColor,
+  buildAccountsData,
+  groupByCategory,
+  orderByAccountType,
+  rangeStart,
+} from "@/components/overview/accounts";
 import { keyToYearMonth } from "@/components/spending/model";
 
 const RANGE_OPTIONS: { value: RangeKey; label: string }[] = [
+  { value: "1M", label: "1M" },
+  { value: "3M", label: "3M" },
   { value: "6M", label: "6M" },
   { value: "YTD", label: "YTD" },
   { value: "1Y", label: "1Y" },
   { value: "3Y", label: "3Y" },
+  { value: "5Y", label: "5Y" },
+  { value: "ALL", label: "All" },
 ];
 
 const RANGE_LABELS: Record<RangeKey, string> = {
+  "1M": "1 mo",
+  "3M": "3 mo",
   "6M": "6 mo",
   YTD: "YTD",
   "1Y": "12 mo",
   "3Y": "3 yr",
+  "5Y": "5 yr",
+  ALL: "all time",
 };
 
 const MODE_OPTIONS = [
   { value: "total" as const, label: "Total" },
-  { value: "split" as const, label: "vs invested" },
+  { value: "type" as const, label: "By type" },
+];
+
+const GROUP_BY_OPTIONS = [
+  { value: "type" as const, label: "By type" },
+  { value: "account" as const, label: "By account" },
 ];
 
 export default function OverviewPage() {
@@ -65,8 +84,9 @@ export default function OverviewPage() {
   const [loading, setLoading] = useState(true);
 
   const [range, setRange] = useState<RangeKey>("1Y");
-  const [mode, setMode] = useState<"total" | "split">("total");
+  const [mode, setMode] = useState<"total" | "type">("total");
   const [cashFlowPerson, setCashFlowPerson] = useState<string>("household");
+  const [groupBy, setGroupBy] = useState<"type" | "account">("type");
 
   const compact = useIsCompact();
 
@@ -99,6 +119,12 @@ export default function OverviewPage() {
 
   const data = useMemo(() => buildAccountsData(points), [points]);
   const start = useMemo(() => rangeStart(range, data.monthKeys), [range, data.monthKeys]);
+
+  // Household totals per account type, in a fixed bottom-to-top stack order.
+  const types = useMemo(
+    () => orderByAccountType(groupByCategory(data.accounts, data.monthKeys.length)),
+    [data]
+  );
 
   const spending = useMemo(() => {
     if (!trends.length) return [];
@@ -142,26 +168,34 @@ export default function OverviewPage() {
     return monthLabelShort(year, month);
   });
 
-  const split = mode === "split";
-  const [lo, hi] = paddedExtent(split ? [...total, ...invested] : total);
+  const byType = mode === "type";
   const netWorth = total[total.length - 1] ?? 0;
   const first = total[0] ?? 0;
   const change = netWorth - first;
 
-  const series: ChartSeries[] = [
-    { label: "Net worth", values: total, color: "var(--fx-accent)", width: 2.2, fill: true },
-    ...(split
-      ? [
-          {
-            label: "Invested only",
-            values: invested,
-            color: "var(--fx-ink-3)",
-            width: 1.6,
-            dash: "6 5",
-          },
-        ]
-      : []),
-  ];
+  // Each band is drawn as a running total, so the top edge of the stack is the
+  // net-worth line itself and the bands read as shares of it.
+  const bands = types.map((t) => t.values.slice(start));
+  const cumulative = bands.map((values, i) =>
+    values.map((v, j) => v + (i ? bands.slice(0, i).reduce((s, b) => s + b[j], 0) : 0))
+  );
+
+  // Stacked areas only read correctly against a zero baseline; the single line
+  // can zoom into its own range.
+  const [lo, hi] = byType
+    ? [0, Math.max(...total, 1) * 1.06]
+    : paddedExtent(total);
+
+  const series: ChartSeries[] = byType
+    ? types.map((t, i) => ({
+        label: t.category,
+        values: cumulative[i],
+        baseline: i ? cumulative[i - 1] : undefined,
+        color: accountTypeColor(t.category),
+        fillColor: accountTypeColor(t.category),
+        width: 1.6,
+      }))
+    : [{ label: "Net worth", values: total, color: "var(--fx-accent)", width: 2.2, fill: true }];
 
   const step = Math.max(1, Math.round(labels.length / (compact ? 4 : 6)));
   const axisLabels = labels.filter((_, i) => i % step === 0);
@@ -178,7 +212,7 @@ export default function OverviewPage() {
             <div className="flex flex-wrap items-end gap-x-7 gap-y-4">
               <div className="min-w-0 flex-1 basis-[250px]">
                 <div className="font-fx-mono text-[10px] font-medium leading-none tracking-[0.14em] text-fx-ink-3">
-                  {split ? "HOUSEHOLD NET WORTH · INVESTED VS TOTAL" : "HOUSEHOLD NET WORTH"}
+                  {byType ? "HOUSEHOLD NET WORTH · BY ACCOUNT TYPE" : "HOUSEHOLD NET WORTH"}
                 </div>
                 <div
                   data-testid="metric-total-value"
@@ -216,13 +250,25 @@ export default function OverviewPage() {
               min={lo}
               max={hi}
               pointCount={total.length}
-              ariaLabel="Household net worth over time"
+              markerSeries={series.length - 1}
+              ariaLabel={
+                byType
+                  ? "Household net worth over time, stacked by account type"
+                  : "Household net worth over time"
+              }
               tooltipTitle={(i) => labels[i]}
               tooltipRows={(i) =>
-                split
+                byType
                   ? [
-                      { label: "Net worth", value: nis(total[i]), color: "var(--fx-accent)" },
-                      { label: "Invested only", value: nis(invested[i]), color: "var(--fx-ink-3)" },
+                      // Top band first, so the rows read in the order they're drawn.
+                      ...[...types]
+                        .reverse()
+                        .map((t) => ({
+                          label: t.category,
+                          value: nis(t.values[start + i] ?? 0),
+                          color: accountTypeColor(t.category),
+                        })),
+                      { label: "Net worth", value: nis(total[i]), color: "transparent" },
                     ]
                   : [
                       { label: "Net worth", value: nis(total[i]), color: "var(--fx-accent)" },
@@ -242,6 +288,25 @@ export default function OverviewPage() {
             ))}
           </div>
 
+          {byType && (
+            <div className="mt-3.5 flex flex-wrap gap-x-[18px] gap-y-2 px-5">
+              {[...types].reverse().map((t) => (
+                <span
+                  key={t.category}
+                  data-testid={`chart-legend-${t.category}`}
+                  className="flex items-center gap-[7px] text-[11.5px]"
+                >
+                  <span
+                    className="h-2 w-2 flex-none rounded-sm"
+                    style={{ background: accountTypeColor(t.category) }}
+                  />
+                  <span className="text-fx-ink-2">{t.category}</span>
+                  <span className="fx-num text-fx-ink">{nisShort(t.balance)}</span>
+                </span>
+              ))}
+            </div>
+          )}
+
           <div className="mt-3.5 px-5">
             <PillGroup
               options={RANGE_OPTIONS}
@@ -252,8 +317,9 @@ export default function OverviewPage() {
           </div>
 
           <p className="mx-5 mt-4 text-sm leading-[1.6] text-fx-ink-2 text-pretty">
-            Net worth is {nis(netWorth)}, {pct(first ? (change / Math.abs(first)) * 100 : 0)} over
-            the last {RANGE_LABELS[range]}. Long-term holdings account for{" "}
+            Net worth is {nis(netWorth)}, {pct(first ? (change / Math.abs(first)) * 100 : 0)}{" "}
+            {range === "ALL" ? "over all time" : `over the last ${RANGE_LABELS[range]}`}. Long-term
+            holdings account for{" "}
             {nis(invested[invested.length - 1] ?? 0)} of it — {""}
             {Math.round(((invested[invested.length - 1] ?? 0) / (netWorth || 1)) * 100)}% of the
             total.
@@ -265,10 +331,13 @@ export default function OverviewPage() {
           <SectionHeader
             label="ACCOUNTS"
             trailing={
-              <span className="text-[11.5px] text-fx-ink-3">
-                {data.accounts.length} accounts · {RANGE_LABELS[range]} · tap a person, then an
-                account
-              </span>
+              <SegmentedControl
+                options={GROUP_BY_OPTIONS}
+                value={groupBy}
+                onChange={setGroupBy}
+                size="sm"
+                ariaLabel="Accounts grouping"
+              />
             }
           />
           <AccountsByPerson
@@ -276,7 +345,12 @@ export default function OverviewPage() {
             start={start}
             rangeLabel={RANGE_LABELS[range]}
             compact={compact}
+            groupBy={groupBy}
           />
+          <p className="mt-[9px] text-[11.5px] text-fx-ink-3">
+            {data.accounts.length} accounts · {RANGE_LABELS[range]} · tap a person, then{" "}
+            {groupBy === "type" ? "a type" : "an account"}
+          </p>
         </div>
 
         {/* Cash flow */}
