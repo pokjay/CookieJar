@@ -47,11 +47,15 @@ export default function CashFlowLedger({
     open(year);
   };
 
-  // Re-fetch when the underlying dataset changes (e.g. the person filter moved).
+  // Follow the page when it moves to another year — the cash-flow month stepper
+  // crosses year boundaries, and an expanded ledger must not be left showing the
+  // year the user has stepped away from. Also re-fetches when the underlying
+  // dataset changes (e.g. the person filter moved).
   useEffect(() => {
-    if (openYear !== null) open(openYear);
+    const target = initialOpenYear ?? openYear;
+    if (target !== null && target !== undefined) open(target);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadMonths]);
+  }, [loadMonths, initialOpenYear]);
 
   const amountWidth = compact ? "w-[78px]" : "w-[116px]";
 
