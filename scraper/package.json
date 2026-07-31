@@ -10,7 +10,7 @@
     "doctor": "node src/doctor.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
+    "express": "^5.2.1",
     "israeli-bank-scrapers": "^6.9.0"
   },
   "engines": {
