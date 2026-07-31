@@ -166,6 +166,64 @@ def get_net_worth_over_time() -> pd.DataFrame:
     return result.sort_values("activity_date").reset_index(drop=True)
 
 
+def get_net_worth_by_account_over_time() -> pd.DataFrame:
+    if is_mock_mode():
+        accounts = get_investment_accounts()
+        tracking = get_investment_tracking()
+    else:
+        accounts = run_query(
+            "SELECT id, person, company, account_type, account_type_category, is_active "
+            "FROM investment_accounts"
+        )
+        tracking = run_query(
+            "SELECT id, investment_accounts_id, activity_date, amount "
+            "FROM investment_accounts_tracking "
+            "ORDER BY activity_date, investment_accounts_id, id"
+        )
+        tracking["activity_date"] = pd.to_datetime(tracking["activity_date"])
+
+    cols = [
+        "activity_date",
+        "account_id",
+        "person",
+        "company",
+        "account_type_category",
+        "amount",
+    ]
+    filled = forward_fill_account_balances(tracking, _inactive_account_ids(accounts))
+    if filled.empty:
+        return pd.DataFrame(columns=cols)
+
+    merged = filled.merge(
+        accounts[["id", "person", "company", "account_type_category"]],
+        left_on="investment_accounts_id",
+        right_on="id",
+    ).rename(columns={"investment_accounts_id": "account_id"})
+    return merged[cols].sort_values(["activity_date", "account_id"]).reset_index(drop=True)
+
+
+def month_end_account_balances(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse a forward-filled per-account series to one month-end row per account.
+
+    ``get_net_worth_by_account_over_time`` returns a row per (account, tracking
+    date), which grows unbounded with history. The Overview only ever renders
+    monthly points, so shipping daily granularity just inflates the API payload.
+    Rows are assumed date-sorted (as that function returns them); the last row in
+    each (account, calendar-month) bucket is that month's closing balance.
+    """
+    if df.empty:
+        return df
+    month = df["activity_date"].dt.to_period("M")
+    reduced = df.assign(_month=month).drop_duplicates(
+        subset=["account_id", "_month"], keep="last"
+    )
+    return (
+        reduced.drop(columns="_month")
+        .sort_values(["activity_date", "account_id"])
+        .reset_index(drop=True)
+    )
+
+
 def get_net_worth_by_category_over_time() -> pd.DataFrame:
     if is_mock_mode():
         accounts = get_investment_accounts()

@@ -47,6 +47,94 @@
   --cj-warning:      250 204  21;   /* yellow-400  #facc15 */
 }
 
+/* ─── Flexoki token layer (Overview / Spending / Cash flow) ─────────────────
+   Scoped to the redesigned pages via .fx so the remaining pages keep the
+   --cj-* palette above unchanged. */
+
+.fx {
+  --fx-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  /* Paper */
+  --fx-page:       #e6e4d9;
+  --fx-bg:         #f2f0e5;
+  --fx-surface:    #fffcf0;
+  --fx-surface-2:  #e6e4d9;
+  --fx-ink:        #100f0f;
+  --fx-ink-2:      #6f6e69;
+  --fx-ink-3:      #a8a5a0;
+  --fx-line:       #dad8ce;
+  --fx-line-2:     #eceae0;
+  --fx-accent:     #bc5215;
+  --fx-accent-soft: rgb(188 82 21 / 0.1);
+  --fx-positive:   #66800b;
+  --fx-negative:   #af3029;
+  --fx-card-bg:    #fffcf0;
+  --fx-card-border: #dad8ce;
+  --fx-shadow: 0 1px 2px rgb(16 15 15 / 0.04), 0 10px 28px -20px rgb(16 15 15 / 0.22);
+  --fx-radius: 14px;
+  --fx-num: inherit;
+  --fx-num-weight: 600;
+  --fx-num-tracking: -0.025em;
+
+  /* Categorical series */
+  --fx-s1: #bc5215;
+  --fx-s2: #66800b;
+  --fx-s3: #205ea6;
+  --fx-s4: #af3029;
+  --fx-s5: #5e409d;
+  --fx-s6: #ad8301;
+  --fx-s7: #24837b;
+  --fx-s8: #a02f6f;
+
+  background: var(--fx-page);
+  color: var(--fx-ink);
+}
+
+.dark .fx {
+  /* Night — driven by the amber from the dark logo lockup */
+  --fx-page:       #000;
+  --fx-bg:         #0b0b0a;
+  --fx-surface:    #141412;
+  --fx-surface-2:  #1b1b18;
+  --fx-ink:        #f4f1e8;
+  --fx-ink-2:      #9b9890;
+  --fx-ink-3:      #605e58;
+  --fx-line:       #26251f;
+  --fx-line-2:     #1a1a16;
+  --fx-accent:     #e9a44c;
+  --fx-accent-soft: rgb(233 164 76 / 0.14);
+  --fx-positive:   #a8bf42;
+  --fx-negative:   #d1613f;
+  --fx-card-bg:    rgb(244 241 232 / 0.03);
+  --fx-card-border: transparent;
+  --fx-shadow: none;
+  --fx-radius: 18px;
+  --fx-num: var(--fx-mono);
+  --fx-num-weight: 400;
+  --fx-num-tracking: -0.03em;
+
+  --fx-s1: #e9a44c;
+  --fx-s2: #7d9a86;
+  --fx-s3: #8a94a8;
+  --fx-s4: #d1613f;
+  --fx-s5: #9b8bb0;
+  --fx-s6: #c2a24a;
+  --fx-s7: #5f9490;
+  --fx-s8: #b06f8a;
+}
+
+/* Figures line up in columns and never break across the thousands comma. */
+.fx-num {
+  font-family: var(--fx-num);
+  font-weight: var(--fx-num-weight);
+  letter-spacing: var(--fx-num-tracking);
+  font-variant-numeric: tabular-nums;
+}
+
+.fx-mono {
+  font-family: var(--fx-mono);
+}
+
 body {
   background: rgb(var(--cj-bg));
   color: rgb(var(--cj-text));

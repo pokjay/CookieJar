@@ -12,8 +12,10 @@ from backend.data import (
     get_all_cash_flow,
     get_distinct_persons,
     get_investment_accounts_with_latest,
+    get_net_worth_by_account_over_time,
     get_net_worth_by_category_over_time,
     get_net_worth_over_time,
+    month_end_account_balances,
 )
 from src.constants import ACCOUNT_TYPE_CATEGORY_MAP
 
@@ -22,6 +24,7 @@ router = APIRouter(prefix="/overview")
 _accounts = ttl_cached(get_investment_accounts_with_latest)
 _net_worth = ttl_cached(get_net_worth_over_time)
 _net_worth_by_cat = ttl_cached(get_net_worth_by_category_over_time)
+_net_worth_by_acct = ttl_cached(get_net_worth_by_account_over_time)
 _cash_flow = ttl_cached(get_all_cash_flow)
 _persons = ttl_cached(get_distinct_persons)
 
@@ -79,6 +82,22 @@ def net_worth_by_category(person: str | None = Query(None)):
     )
     result["activity_date"] = result["activity_date"].dt.strftime("%Y-%m-%d")
     return result[["activity_date", "category", "amount"]].to_dict(orient="records")
+
+
+@router.get("/accounts-over-time")
+def accounts_over_time():
+    # Reduce to month-end balances before serializing: the frontend collapses
+    # this to a monthly axis anyway, so daily granularity is wasted in transit.
+    df = month_end_account_balances(_net_worth_by_acct())
+    if df.empty:
+        return []
+    df["category"] = df["account_type_category"].map(ACCOUNT_TYPE_CATEGORY_MAP)
+    df["category"] = df["category"].fillna("Other")
+    df["activity_date"] = df["activity_date"].dt.strftime("%Y-%m-%d")
+    df["name"] = df["category"] + " · " + df["company"]
+    return df[["activity_date", "account_id", "name", "person", "category", "amount"]].to_dict(
+        orient="records"
+    )
 
 
 @router.get("/cash-flow/yearly")
