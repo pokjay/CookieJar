@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { nis, signColor } from "./format";
 import type { CashFlowMonthly, CashFlowYearly } from "@/lib/types";
 
@@ -55,6 +55,9 @@ export default function CashFlowLedger({
 
   const amountWidth = compact ? "w-[78px]" : "w-[116px]";
 
+  // The backend returns oldest-first; the ledger leads with the current year.
+  const rows = useMemo(() => [...yearly].sort((a, b) => b.year - a.year), [yearly]);
+
   return (
     <div
       data-testid="cashflow-ledger"
@@ -68,7 +71,7 @@ export default function CashFlowLedger({
         {!compact && <span className="w-[78px] flex-none text-right">SAVINGS %</span>}
       </div>
 
-      {yearly.map((row) => {
+      {rows.map((row) => {
         const expanded = openYear === row.year;
         return (
           <React.Fragment key={row.year}>

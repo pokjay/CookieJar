@@ -19,6 +19,13 @@ def test_meta_lists_persons_and_years():
     assert result["available_years"] == [2022, 2023, 2024, 2025]
 
 
+def test_meta_lists_available_months_in_order():
+    months = meta()["available_months"]
+    assert months == sorted(months)
+    assert months[0] == "2022-01"
+    assert all(len(m) == 7 and m[4] == "-" for m in months)
+
+
 def test_yearly_aggregates_all_years():
     rows = yearly(person=None)
     assert [r["year"] for r in rows] == [2022, 2023, 2024, 2025]
@@ -49,6 +56,17 @@ def test_monthly_by_account_groups_by_account():
 
 
 def test_sankey_builds_income_links():
-    result = sankey(year=2024, person=None, expanded=None)
+    result = sankey(year=2024, person=None, expanded=None, month=None)
     assert {n["name"] for n in result["nodes"]} >= {"Income"}
     assert all(lnk["value"] >= 0 for lnk in result["links"])
+
+
+def test_sankey_month_scope_is_a_subset_of_the_year():
+    year = sankey(year=2024, person=None, expanded=None, month=None)
+    march = sankey(year=2024, person=None, expanded=None, month=3)
+
+    def income_total(result):
+        return sum(lnk["value"] for lnk in result["links"] if lnk["source"] == "Income")
+
+    assert income_total(march) > 0
+    assert income_total(march) < income_total(year)

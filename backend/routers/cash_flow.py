@@ -22,7 +22,12 @@ _persons = ttl_cached(get_distinct_persons)
 
 
 def _load_transactions_for_sankey() -> pd.DataFrame:
-    """Raw transactions without sign flip — charged_amount > 0 correctly identifies expenses."""
+    """Transactions signed by intent, so charged_amount > 0 identifies expenses.
+
+    No per-account sign flip here: the accounts listed in
+    ``sign_flipped_accounts`` hold only manual rows, which
+    ``normalize_manual_signs`` has already signed from their cash_flow_type.
+    """
     df = get_all_transactions().copy()
     df["activity_date"] = pd.to_datetime(df["activity_date"])
     if "person" not in df.columns:
@@ -36,8 +41,10 @@ _transactions = ttl_cached(_load_transactions_for_sankey)
 
 @router.get("/meta")
 def meta():
-    years = sorted(_cash_flow()["year"].unique().tolist())
-    return {"persons": _persons(), "available_years": years}
+    df = _cash_flow()
+    years = sorted(df["year"].unique().tolist())
+    months = sorted({f"{int(y)}-{int(m):02d}" for y, m in zip(df["year"], df["month"])})
+    return {"persons": _persons(), "available_years": years, "available_months": months}
 
 
 @router.get("/yearly")
@@ -63,9 +70,15 @@ def sankey(
     year: int = Query(...),
     person: str | None = Query(None),
     expanded: str | None = Query(None),
+    month: int | None = Query(None, ge=1, le=12),
 ):
     expanded_set = set(expanded.split(",")) if expanded else set()
     data = prepare_sankey_data(
-        _transactions(), _cash_flow(), year, person=person, expanded_categories=expanded_set
+        _transactions(),
+        _cash_flow(),
+        year,
+        person=person,
+        expanded_categories=expanded_set,
+        month=month,
     )
     return data
