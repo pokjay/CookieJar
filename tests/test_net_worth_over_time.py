@@ -15,6 +15,7 @@ from backend.data import (
     get_net_worth_by_account_over_time,
     get_net_worth_by_category_over_time,
     get_net_worth_over_time,
+    month_end_account_balances,
 )
 
 
@@ -326,3 +327,62 @@ class TestGetNetWorthByAccountOverTime:
 
         march = result[result["activity_date"] == pd.Timestamp("2025-03-01")]
         assert dict(zip(march["account_id"], march["amount"])) == {2: 105.0}
+
+
+class TestMonthEndAccountBalances:
+    @staticmethod
+    def _series(rows: list[tuple[int, str, float]]) -> pd.DataFrame:
+        """Build a per-account balance frame from (account_id, date, amount) tuples."""
+        return pd.DataFrame(
+            [
+                {
+                    "activity_date": pd.Timestamp(date),
+                    "account_id": acc_id,
+                    "person": "Alice",
+                    "company": "Acme",
+                    "account_type_category": "השקעות",
+                    "amount": amount,
+                }
+                for acc_id, date, amount in rows
+            ]
+        )
+
+    def test_empty_input_passes_through(self):
+        empty = self._series([])
+        assert month_end_account_balances(empty).empty
+
+    def test_keeps_only_month_end_balance_per_account(self):
+        df = self._series(
+            [
+                (1, "2025-01-05", 100.0),
+                (1, "2025-01-20", 120.0),
+                (1, "2025-02-10", 130.0),
+            ]
+        )
+        result = month_end_account_balances(df)
+
+        # One row per (account, month): January collapses to its last (Jan 20) balance.
+        assert len(result) == 2
+        by_month = {
+            (r.activity_date.strftime("%Y-%m"), r.account_id): r.amount
+            for r in result.itertuples()
+        }
+        assert by_month == {("2025-01", 1): 120.0, ("2025-02", 1): 130.0}
+
+    def test_accounts_reduced_independently(self):
+        df = self._series(
+            [
+                (1, "2025-01-10", 100.0),
+                (2, "2025-01-15", 50.0),
+                (1, "2025-01-28", 110.0),
+                (2, "2025-01-20", 55.0),
+            ]
+        )
+        result = month_end_account_balances(df)
+
+        # Both accounts keep their own January month-end balance.
+        assert dict(zip(result["account_id"], result["amount"])) == {1: 110.0, 2: 55.0}
+
+    def test_preserves_columns(self):
+        df = self._series([(1, "2025-01-05", 100.0)])
+        assert list(month_end_account_balances(df).columns) == list(df.columns)

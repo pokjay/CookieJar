@@ -8,15 +8,17 @@ import {
   getTransactionsBrowseMeta,
   getTxnSubscriptions,
 } from "@/lib/api";
-import type { Transaction, TransactionBrowseMeta } from "@/lib/types";
+import type {
+  CategorySort,
+  ListFilters,
+  Transaction,
+  TransactionBrowseMeta,
+} from "@/lib/types";
 import { monthLabel } from "@/components/ledger/format";
 import SpendingHero from "@/components/spending/SpendingHero";
-import CategoryTable, { type CategorySort } from "@/components/spending/CategoryTable";
+import CategoryTable from "@/components/spending/CategoryTable";
 import LongTermView from "@/components/spending/LongTermView";
-import TransactionList, {
-  EMPTY_FILTERS,
-  type ListFilters,
-} from "@/components/spending/TransactionList";
+import TransactionList, { EMPTY_FILTERS } from "@/components/spending/TransactionList";
 import {
   CommittedVsChosen,
   DataHealthBanner,

@@ -1,8 +1,9 @@
 "use client";
 
-import InteractiveChart, { type ChartSeries } from "@/components/ledger/InteractiveChart";
+import InteractiveChart from "@/components/ledger/InteractiveChart";
 import { Card } from "@/components/ledger/ui";
 import { nis, pct, signColor, monthLabel } from "@/components/ledger/format";
+import type { ChartSeries } from "@/lib/types";
 import type { SpendingModel } from "./model";
 import { keyToYearMonth } from "./model";
 

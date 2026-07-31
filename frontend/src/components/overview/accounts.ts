@@ -1,4 +1,4 @@
-import type { AccountBalancePoint } from "@/lib/types";
+import type { AccountBalancePoint, RangeKey } from "@/lib/types";
 
 export interface AccountSeries {
   id: number;
@@ -88,14 +88,12 @@ export function buildAccountsData(points: AccountBalancePoint[]): AccountsData {
   return { monthKeys, accounts, total, invested, persons };
 }
 
-export const RANGES = {
+export const RANGES: Record<RangeKey, number> = {
   "6M": 7,
   YTD: 0,
   "1Y": 13,
   "3Y": 37,
-} as const;
-
-export type RangeKey = keyof typeof RANGES;
+};
 
 /** Index into the month arrays where the selected range starts. */
 export function rangeStart(range: RangeKey, monthKeys: number[]): number {

@@ -9,8 +9,14 @@ import {
   getCashFlowYearly,
   getTxnCategoryTrends,
 } from "@/lib/api";
-import type { AccountBalancePoint, CashFlowYearly, TxnCategoryTrend } from "@/lib/types";
-import InteractiveChart, { type ChartSeries } from "@/components/ledger/InteractiveChart";
+import type {
+  AccountBalancePoint,
+  CashFlowYearly,
+  ChartSeries,
+  RangeKey,
+  TxnCategoryTrend,
+} from "@/lib/types";
+import InteractiveChart from "@/components/ledger/InteractiveChart";
 import CashFlowLedger from "@/components/ledger/CashFlowLedger";
 import {
   PillGroup,
@@ -29,7 +35,7 @@ import {
 import { paddedExtent } from "@/components/ledger/paths";
 import { useIsCompact } from "@/components/ledger/useIsCompact";
 import AccountsByPerson from "@/components/overview/AccountsByPerson";
-import { buildAccountsData, rangeStart, type RangeKey } from "@/components/overview/accounts";
+import { buildAccountsData, rangeStart } from "@/components/overview/accounts";
 import { keyToYearMonth } from "@/components/spending/model";
 
 const RANGE_OPTIONS: { value: RangeKey; label: string }[] = [
@@ -65,15 +71,19 @@ export default function OverviewPage() {
   const compact = useIsCompact();
 
   useEffect(() => {
-    Promise.all([getAccountsOverTime(), getCashFlowMeta()]).then(([accounts, meta]) => {
-      setPoints(accounts);
-      setPersons(meta.persons);
-      const latestYear = meta.available_years[meta.available_years.length - 1];
-      if (latestYear) {
-        getTxnCategoryTrends(latestYear).then(setTrends).catch(() => setTrends([]));
-      }
-      setLoading(false);
-    });
+    Promise.all([getAccountsOverTime(), getCashFlowMeta()])
+      .then(([accounts, meta]) => {
+        setPoints(accounts);
+        setPersons(meta.persons);
+        const latestYear = meta.available_years[meta.available_years.length - 1];
+        if (latestYear) {
+          getTxnCategoryTrends(latestYear).then(setTrends).catch(() => setTrends([]));
+        }
+      })
+      // A transient network/backend error must still drop the loading screen,
+      // otherwise the page hangs on it forever. Render with whatever loaded.
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {

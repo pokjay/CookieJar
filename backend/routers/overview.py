@@ -15,6 +15,7 @@ from backend.data import (
     get_net_worth_by_account_over_time,
     get_net_worth_by_category_over_time,
     get_net_worth_over_time,
+    month_end_account_balances,
 )
 from src.constants import ACCOUNT_TYPE_CATEGORY_MAP
 
@@ -85,7 +86,9 @@ def net_worth_by_category(person: str | None = Query(None)):
 
 @router.get("/accounts-over-time")
 def accounts_over_time():
-    df = _net_worth_by_acct().copy()
+    # Reduce to month-end balances before serializing: the frontend collapses
+    # this to a monthly axis anyway, so daily granularity is wasted in transit.
+    df = month_end_account_balances(_net_worth_by_acct())
     if df.empty:
         return []
     df["category"] = df["account_type_category"].map(ACCOUNT_TYPE_CATEGORY_MAP)

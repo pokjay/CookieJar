@@ -36,6 +36,32 @@ export interface AccountBalancePoint {
   amount: number;
 }
 
+/** A single line drawn by the ledger `InteractiveChart`. */
+export interface ChartSeries {
+  label: string;
+  values: number[];
+  color: string;
+  /** Dashed lines read as comparisons; the solid one is the subject of the chart. */
+  dash?: string;
+  width?: number;
+  fill?: boolean;
+}
+
+/** Time range for the Overview net-worth chart and the accounts below it. */
+export type RangeKey = "6M" | "YTD" | "1Y" | "3Y";
+
+/** Sort order for the spending page's category table. */
+export type CategorySort = "amount" | "change" | "name";
+
+/** Filter state for the spending page's transaction list. */
+export interface ListFilters {
+  person: string;
+  account: string;
+  subcategory: string;
+  type: "all" | "committed" | "oneoff";
+  minAmount: number;
+}
+
 export interface CashFlowYearly {
   year: number;
   income: number;

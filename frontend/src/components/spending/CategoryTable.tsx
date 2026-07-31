@@ -3,10 +3,9 @@
 import { useMemo } from "react";
 import { Card, SegmentedControl, Sparkline } from "@/components/ledger/ui";
 import { categoryColor, nis, pct, signColor } from "@/components/ledger/format";
+import type { CategorySort } from "@/lib/types";
 import type { SpendingModel } from "./model";
 import { UNCATEGORIZED } from "./model";
-
-export type CategorySort = "amount" | "change" | "name";
 
 const SORT_OPTIONS = [
   { value: "amount" as const, label: "Biggest" },

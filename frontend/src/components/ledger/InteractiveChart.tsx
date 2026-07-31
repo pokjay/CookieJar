@@ -1,17 +1,8 @@
 "use client";
 
 import { useCallback, useState, useId } from "react";
+import type { ChartSeries } from "@/lib/types";
 import { areaPath, linePath, yAt } from "./paths";
-
-export interface ChartSeries {
-  label: string;
-  values: number[];
-  color: string;
-  /** Dashed lines read as comparisons; the solid one is the subject of the chart. */
-  dash?: string;
-  width?: number;
-  fill?: boolean;
-}
 
 export interface TooltipRow {
   label: string;

@@ -4,18 +4,10 @@ import { useMemo, useState, useEffect } from "react";
 import * as Slider from "@radix-ui/react-slider";
 import { Card, StatTile } from "@/components/ledger/ui";
 import { categoryColor, dayLabel, nis } from "@/components/ledger/format";
-import type { Transaction, TransactionBrowseMeta } from "@/lib/types";
+import type { ListFilters, Transaction, TransactionBrowseMeta } from "@/lib/types";
 import { categoryOf, keyToYearMonth } from "./model";
 
 const PAGE = 20;
-
-export interface ListFilters {
-  person: string;
-  account: string;
-  subcategory: string;
-  type: "all" | "committed" | "oneoff";
-  minAmount: number;
-}
 
 export const EMPTY_FILTERS: ListFilters = {
   person: "all",
@@ -109,10 +101,12 @@ export default function TransactionList({
     return subs.sort();
   }, [searchMatched]);
 
-  const maxAmount = useMemo(
-    () => Math.max(200, Math.ceil(Math.max(...transactions.map((t) => t.charged_amount), 0) / 100) * 100),
-    [transactions]
-  );
+  const maxAmount = useMemo(() => {
+    // Reduce rather than spread into Math.max: a month with a very large
+    // transaction count would exceed the engine's argument limit and throw.
+    const rawMax = transactions.reduce((m, t) => (t.charged_amount > m ? t.charged_amount : m), 0);
+    return Math.max(200, Math.ceil(rawMax / 100) * 100);
+  }, [transactions]);
 
   const filtered = useMemo(() => {
     let list = searchMatched;
