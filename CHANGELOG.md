@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.11.0](https://github.com/pokjay/CookieJar/compare/v0.10.0...v0.11.0) (2026-07-31)
+
+
+### Features
+
+* **overview,cash-flow:** group accounts by type, stack net worth, month-scoped cash flow ([#145](https://github.com/pokjay/CookieJar/issues/145)) ([d04ce8d](https://github.com/pokjay/CookieJar/commit/d04ce8d801f9f4b7a1a409c0fb4172bd43d9869c))
+
 ## [0.10.0](https://github.com/pokjay/CookieJar/compare/v0.9.0...v0.10.0) (2026-07-31)
 
 
