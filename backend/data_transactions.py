@@ -6,6 +6,7 @@ import pandas as pd
 
 from src.db.connection import is_mock_mode, run_query
 from src.db.mock_data import get_transactions
+from src.db.queries.transactions import NORMALIZED_INTENTS, normalize_manual_signs
 from src.settings import load_settings
 
 _MONTH_NAMES = {
@@ -17,10 +18,18 @@ _DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
 def _apply_sign_flip(df: pd.DataFrame) -> pd.DataFrame:
+    """Flip the accounts whose bank exports debits the other way round.
+
+    Only rows whose sign still means something are flipped: manual rows with a
+    recorded cash_flow_type have already been signed by intent in
+    :func:`normalize_manual_signs`, and flipping them again would undo it.
+    """
     accounts = load_settings().get("sign_flipped_accounts", [])
     if not accounts:
         return df
     mask = df["account"].isin(accounts)
+    if "cash_flow_type" in df.columns:
+        mask &= ~df["cash_flow_type"].isin(NORMALIZED_INTENTS)
     df.loc[mask, "charged_amount"] = -df.loc[mask, "charged_amount"]
     return df
 
@@ -30,8 +39,10 @@ def get_travel_transactions() -> pd.DataFrame:
     if is_mock_mode():
         df = get_transactions()
     else:
-        df = run_query(
-            "SELECT * FROM processed_transcations_with_categories ORDER BY activity_date DESC"
+        df = normalize_manual_signs(
+            run_query(
+                "SELECT * FROM processed_transcations_with_categories ORDER BY activity_date DESC"
+            )
         )
     df = df.copy()
     df["activity_date"] = pd.to_datetime(df["activity_date"])
@@ -50,8 +61,10 @@ def get_transactions_excl_travel() -> pd.DataFrame:
     if is_mock_mode():
         df = get_transactions()
     else:
-        df = run_query(
-            "SELECT * FROM processed_transcations_with_categories ORDER BY activity_date DESC"
+        df = normalize_manual_signs(
+            run_query(
+                "SELECT * FROM processed_transcations_with_categories ORDER BY activity_date DESC"
+            )
         )
 
     df = df.copy()

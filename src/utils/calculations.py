@@ -254,8 +254,9 @@ def prepare_sankey_data(
     year: int,
     person: str | None = None,
     expanded_categories: set[str] | None = None,
+    month: int | None = None,
 ) -> dict:
-    """Prepare nodes and links for a yearly cash flow Sankey diagram.
+    """Prepare nodes and links for a cash flow Sankey diagram.
 
     Flow: Income → expense categories / savings → subcategories.
 
@@ -263,6 +264,8 @@ def prepare_sankey_data(
         expanded_categories: set of category names whose subcategories should
             be shown. Categories not in this set are leaf nodes. If None,
             no subcategories are shown.
+        month: 1-12 to narrow the diagram to a single month of ``year``;
+            None covers the whole year.
 
     Returns dict with keys:
         "nodes" (list of dicts with "name"),
@@ -273,6 +276,10 @@ def prepare_sankey_data(
 
     cf = cash_flow_df[cash_flow_df["year"] == year].copy()
     txn = transactions_df[transactions_df["activity_date"].dt.year == year].copy()
+
+    if month is not None:
+        cf = cf[cf["month"] == month]
+        txn = txn[txn["activity_date"].dt.month == month]
 
     if person:
         cf = cf[cf["person"] == person]
@@ -287,7 +294,14 @@ def prepare_sankey_data(
     expanded = expanded_categories or set()
 
     # Only positive charges are expenses; exclude uncategorized
-    expenses = txn[(txn["charged_amount"] > 0) & txn["category"].notna()].copy()
+    is_expense = (txn["charged_amount"] > 0) & txn["category"].notna()
+    if "cash_flow_type" in txn.columns:
+        # Manual rows record what they are. A savings contribution or a transfer
+        # between the household's own accounts is not consumption, whatever sign
+        # the exporting bank gave it.
+        intent = txn["cash_flow_type"]
+        is_expense &= intent.isna() | (intent == "expense")
+    expenses = txn[is_expense].copy()
 
     # --- Build category → subcategory aggregations ---
     cat_totals = expenses.groupby("category")["charged_amount"].sum()
