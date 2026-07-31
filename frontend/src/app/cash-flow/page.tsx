@@ -51,11 +51,15 @@ export default function CashFlowPage() {
   const { year, month } = monthKey ? parseMonth(monthKey) : { year: 0, month: 0 };
 
   useEffect(() => {
-    getCashFlowMeta().then((m) => {
-      setMeta(m);
-      setMonthKey(m.available_months[m.available_months.length - 1] ?? "");
-      setSankeyYear(m.available_years[m.available_years.length - 1]);
-    });
+    getCashFlowMeta()
+      .then((m) => {
+        setMeta(m);
+        setMonthKey(m.available_months[m.available_months.length - 1] ?? "");
+        setSankeyYear(m.available_years[m.available_years.length - 1] ?? 0);
+      })
+      // A transient failure must land on the empty state rather than leave the
+      // page spinning forever.
+      .catch(() => setMeta({ persons: [], available_years: [], available_months: [] }));
   }, []);
 
   useEffect(() => {
@@ -64,16 +68,21 @@ export default function CashFlowPage() {
   }, [monthKey, sankeyYear, sankeyScope, person]);
 
   useEffect(() => {
-    if (!year) return;
-    Promise.all([
-      getCashFlowYearlyPage(scoped),
-      getCashFlowMonthlyPage(year, scoped),
-    ]).then(([y, m]) => {
-      setYearly(y);
-      setMonthly(m);
+    // Still waiting on meta; once it lands, a household with no cash flow at
+    // all has no year to fetch and must fall through to the empty state.
+    if (!meta) return;
+    if (!year) {
       setLoading(false);
-    });
-  }, [year, scoped]);
+      return;
+    }
+    Promise.all([getCashFlowYearlyPage(scoped), getCashFlowMonthlyPage(year, scoped)])
+      .then(([y, m]) => {
+        setYearly(y);
+        setMonthly(m);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [meta, year, scoped]);
 
   useEffect(() => {
     if (!year) return;
@@ -144,10 +153,27 @@ export default function CashFlowPage() {
 
   const maxFlow = Math.max(...monthly.flatMap((m) => [m.income, m.expense]), 1);
 
-  if (loading || !meta || !monthKey) {
+  if (loading || !meta) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <p className="text-lg text-cj-text-muted">Loading...</p>
+      </div>
+    );
+  }
+
+  // Every panel below is scoped to a month, so with no cash flow recorded yet
+  // there is nothing to scope to. Say so instead of spinning.
+  if (!monthKey) {
+    return (
+      <div className="fx min-h-screen">
+        <div className="mx-auto flex max-w-[1200px] flex-col gap-[22px] px-5 py-5">
+          <h1 className="text-[19px] font-semibold tracking-[-0.02em]">Cash flow</h1>
+          <Card>
+            <p className="text-[12.5px] text-fx-ink-2">
+              No cash-flow data yet. Once a sync or a manual import lands, months show up here.
+            </p>
+          </Card>
+        </div>
       </div>
     );
   }
