@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.10.0](https://github.com/pokjay/CookieJar/compare/v0.9.0...v0.10.0) (2026-07-31)
+
+
+### Features
+
+* **frontend:** rebuild overview, spending and cash flow as a ledger ([#142](https://github.com/pokjay/CookieJar/issues/142)) ([bff0842](https://github.com/pokjay/CookieJar/commit/bff0842e220f288837226f043236f60351676219))
+
 ## [0.9.0](https://github.com/pokjay/CookieJar/compare/v0.8.1...v0.9.0) (2026-07-24)
 
 
