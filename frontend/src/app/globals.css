@@ -86,6 +86,15 @@
   --fx-s7: #24837b;
   --fx-s8: #a02f6f;
 
+  /* Account types — a fixed, colourblind-checked order for the stacked net-worth
+     chart. Kept separate from --fx-s* because the bands sit adjacent to each
+     other, so the hues alternate cool/warm to stay apart under deuteranopia. */
+  --fx-at-1: #205ea6; /* Investments   */
+  --fx-at-2: #bc5215; /* Pension       */
+  --fx-at-3: #5e409d; /* Hishtalmut    */
+  --fx-at-4: #ad8301; /* Rainy Day     */
+  --fx-at-5: #a02f6f; /* Bank Account  */
+
   background: var(--fx-page);
   color: var(--fx-ink);
 }
@@ -121,6 +130,14 @@
   --fx-s6: #c2a24a;
   --fx-s7: #5f9490;
   --fx-s8: #b06f8a;
+
+  /* Lighter steps of the same five hues: the light-mode set reads near-black
+     against the night surface. */
+  --fx-at-1: #4385be;
+  --fx-at-2: #da702c;
+  --fx-at-3: #8b7ec8;
+  --fx-at-4: #b58a12;
+  --fx-at-5: #ce5d97;
 }
 
 /* Figures line up in columns and never break across the thousands comma. */

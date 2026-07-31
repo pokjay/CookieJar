@@ -2,7 +2,7 @@
 
 import { useCallback, useState, useId } from "react";
 import type { ChartSeries } from "@/lib/types";
-import { areaPath, linePath, yAt } from "./paths";
+import { areaPath, bandPath, linePath, yAt } from "./paths";
 
 export interface TooltipRow {
   label: string;
@@ -91,11 +91,24 @@ export default function InteractiveChart({
             vectorEffect="non-scaling-stroke"
           />
         ))}
-        {series.map((s, i) =>
-          s.fill && s.values.length > 1 ? (
+        {series.map((s, i) => {
+          if (s.values.length < 2) return null;
+          // A stacked band fills between its own line and the one below it; a
+          // plain area drops all the way to the axis.
+          if (s.fillColor) {
+            return (
+              <path
+                key={`fill-${i}`}
+                d={s.baseline ? bandPath(s.values, s.baseline, min, max) : areaPath(s.values, min, max)}
+                fill={s.fillColor}
+                fillOpacity="0.72"
+              />
+            );
+          }
+          return s.fill ? (
             <path key={`fill-${i}`} d={areaPath(s.values, min, max)} fill={`url(#${gradientId})`} />
-          ) : null
-        )}
+          ) : null;
+        })}
         {series.map((s, i) =>
           s.values.length > 1 ? (
             <path

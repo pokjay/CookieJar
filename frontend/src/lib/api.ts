@@ -132,11 +132,13 @@ export function getCashFlowMonthlyByAccount(
 export function getCashFlowSankey(
   year: number,
   person?: string,
-  expanded?: string[]
+  expanded?: string[],
+  month?: number
 ): Promise<SankeyData> {
   let q = `?year=${year}`;
   if (person) q += `&person=${encodeURIComponent(person)}`;
   if (expanded && expanded.length > 0) q += `&expanded=${encodeURIComponent(expanded.join(","))}`;
+  if (month) q += `&month=${month}`;
   return fetchJson(`/api/cash-flow/sankey${q}`);
 }
 

@@ -16,6 +16,13 @@
     "Morticia": "+10.8%",
     "Overall": "+8.3%"
   },
+  "accountTypes": [
+    "Investments",
+    "Pension",
+    "Hishtalmut",
+    "Rainy Day Fund",
+    "Bank Account"
+  ],
   "avgMonthlyIncome": "₪63,645",
   "avgMonthlyExpense": "₪43,003"
 }

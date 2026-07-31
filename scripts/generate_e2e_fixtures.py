@@ -31,6 +31,10 @@ from src.utils.calculations import (  # noqa: E402
 
 OUTPUT = Path(__file__).parent.parent / "e2e" / "fixtures" / "expected-overview.json"
 
+# Mirrors ACCOUNT_TYPE_ORDER in frontend/src/components/overview/accounts.ts — the
+# stacked net-worth chart draws its bands bottom-to-top in exactly this order.
+ACCOUNT_TYPE_ORDER = ["Investments", "Pension", "Hishtalmut", "Rainy Day Fund", "Bank Account"]
+
 # Mirrors frontend/src/lib/formatting.ts
 
 
@@ -63,6 +67,7 @@ def main() -> None:
             for person, change in yoy.items()
             if change is not None
         },
+        "accountTypes": [c for c in ACCOUNT_TYPE_ORDER if c in summary["by_category"]],
         "avgMonthlyIncome": format_currency_full(avg["avg_income"]),
         "avgMonthlyExpense": format_currency_full(avg["avg_expense"]),
     }

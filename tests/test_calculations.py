@@ -183,6 +183,41 @@ class TestPrepareSankeyData:
         assert result["nodes"] == []
         assert result["links"] == []
 
+    def test_month_filter_narrows_to_that_month(self):
+        """January 2024 holds Supermarket 200 and Eating Out 300; February's 150 drops out."""
+        txn = _make_transactions_df()
+        cf = _make_cash_flow_df()
+        result = prepare_sankey_data(txn, cf, 2024, month=1)
+
+        values = {lnk["target"]: lnk["value"] for lnk in _links_from(result, "Income")}
+        assert values["Supermarket"] == 200
+        assert values["Eating Out"] == 300
+        # Nothing may flow out beyond January's income: Alice 10000 + Bob 8000.
+        assert sum(values.values()) <= 18000
+
+    def test_month_filter_excludes_other_months(self):
+        txn = _make_transactions_df()
+        cf = _make_cash_flow_df()
+        result = prepare_sankey_data(txn, cf, 2024, month=2)
+
+        # Only Alice's February Supermarket charge of 150 survives.
+        values = {lnk["target"]: lnk["value"] for lnk in _links_from(result, "Income")}
+        assert values["Supermarket"] == 150
+        assert "Eating Out" not in values
+
+    def test_month_none_covers_whole_year(self):
+        txn = _make_transactions_df()
+        cf = _make_cash_flow_df()
+        assert prepare_sankey_data(txn, cf, 2024, month=None) == prepare_sankey_data(txn, cf, 2024)
+
+    def test_empty_month(self):
+        txn = _make_transactions_df()
+        cf = _make_cash_flow_df()
+        result = prepare_sankey_data(txn, cf, 2024, month=12)
+
+        assert result["nodes"] == []
+        assert result["links"] == []
+
     def test_category_values_match(self):
         txn = _make_transactions_df()
         cf = _make_cash_flow_df()

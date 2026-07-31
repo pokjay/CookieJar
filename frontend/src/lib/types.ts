@@ -45,10 +45,14 @@ export interface ChartSeries {
   dash?: string;
   width?: number;
   fill?: boolean;
+  /** Fills this series in its own colour instead of the shared accent gradient. */
+  fillColor?: string;
+  /** Lower edge of a stacked band. Absent means the fill drops to the axis. */
+  baseline?: number[];
 }
 
 /** Time range for the Overview net-worth chart and the accounts below it. */
-export type RangeKey = "6M" | "YTD" | "1Y" | "3Y";
+export type RangeKey = "1M" | "3M" | "6M" | "YTD" | "1Y" | "3Y" | "5Y" | "ALL";
 
 /** Sort order for the spending page's category table. */
 export type CategorySort = "amount" | "change" | "name";
@@ -86,6 +90,8 @@ export interface CashFlowMonthly {
 export interface CashFlowMeta {
   persons: string[];
   available_years: number[];
+  /** Every month that has cash-flow data, as "YYYY-MM", oldest first. */
+  available_months: string[];
 }
 
 export interface SankeyNode {

@@ -1,29 +1,71 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Sparkline, StatTile } from "@/components/ledger/ui";
 import { linePath, areaPath, paddedExtent } from "@/components/ledger/paths";
 import { monthLabelShort, nis, nisShort, pct, signColor } from "@/components/ledger/format";
 import { keyToYearMonth } from "@/components/spending/model";
-import type { AccountsData } from "./accounts";
+import { groupByCategory, type AccountSeries, type AccountsData } from "./accounts";
 
 const PERSON_COLORS = ["var(--fx-accent)", "var(--fx-s2)", "var(--fx-s3)", "var(--fx-s5)"];
+
+/** One expandable line under a person — an account type, or a single account. */
+interface Row {
+  key: string;
+  title: string;
+  subtitle: string;
+  category: string;
+  values: number[];
+  balance: number;
+}
+
+function buildRows(
+  person: string,
+  accounts: AccountSeries[],
+  groupBy: "type" | "account",
+  monthCount: number
+): Row[] {
+  if (groupBy === "account") {
+    return accounts.map((a) => ({
+      key: `${person}::acct-${a.id}`,
+      title: a.name,
+      subtitle: `ILS · ${a.category}`,
+      category: a.category,
+      values: a.values,
+      balance: a.balance,
+    }));
+  }
+  return groupByCategory(accounts, monthCount).map((g) => ({
+    key: `${person}::${g.category}`,
+    title: g.category,
+    subtitle: `${g.accountCount} account${g.accountCount === 1 ? "" : "s"} · ILS`,
+    category: g.category,
+    values: g.values,
+    balance: g.balance,
+  }));
+}
 
 export default function AccountsByPerson({
   data,
   start,
   rangeLabel,
   compact,
+  groupBy,
 }: {
   data: AccountsData;
   start: number;
   rangeLabel: string;
   compact: boolean;
+  groupBy: "type" | "account";
 }) {
   const [openPersons, setOpenPersons] = useState<Record<string, boolean>>(() =>
     data.persons.length ? { [data.persons[0]]: true } : {}
   );
-  const [openAccount, setOpenAccount] = useState<number | null>(null);
+  const [openRow, setOpenRow] = useState<string | null>(null);
+
+  // Row keys are mode-specific, so a row left open in one mode would otherwise
+  // stay "open" as a key that no longer matches anything after switching.
+  useEffect(() => setOpenRow(null), [groupBy]);
 
   const netWorth = data.total[data.total.length - 1] ?? 0;
   const last = data.monthKeys.length - 1;
@@ -82,25 +124,27 @@ export default function AccountsByPerson({
             </button>
 
             {open &&
-              accounts.map((account) => {
-                const window = account.values.slice(start);
-                const monthChange = account.balance - (account.values[last - 1] ?? account.balance);
-                const rangeChange = account.balance - (account.values[start] ?? 0);
-                const expanded = openAccount === account.id;
+              buildRows(person, accounts, groupBy, data.monthKeys.length).map((row) => {
+                const window = row.values.slice(start);
+                const monthChange = row.balance - (row.values[last - 1] ?? row.balance);
+                const rangeChange = row.balance - (row.values[start] ?? 0);
+                const expanded = openRow === row.key;
                 const accentColor =
-                  account.category === "Bank Account" || account.category === "Rainy Day Fund"
+                  row.category === "Bank Account" || row.category === "Rainy Day Fund"
                     ? "var(--fx-accent)"
                     : "var(--fx-s2)";
                 const [lo, hi] = paddedExtent(window, 0.1);
                 const from = keyToYearMonth(data.monthKeys[start] ?? 0);
                 const to = keyToYearMonth(data.monthKeys[last] ?? 0);
+                const gradientId = `acct-${row.key.replace(/\W+/g, "-")}`;
 
                 return (
-                  <div key={account.id} className="border-t border-fx-line-2">
+                  <div key={row.key} className="border-t border-fx-line-2">
                     <button
                       type="button"
+                      data-testid={`account-row-${row.key}`}
                       aria-expanded={expanded}
-                      onClick={() => setOpenAccount(expanded ? null : account.id)}
+                      onClick={() => setOpenRow(expanded ? null : row.key)}
                       className={`flex w-full items-center gap-3 py-[13px] pl-6 pr-[17px] text-left ${
                         expanded ? "bg-fx-surface-2" : "hover:bg-fx-surface-2"
                       }`}
@@ -111,10 +155,10 @@ export default function AccountsByPerson({
                       />
                       <span className="min-w-0 flex-1 basis-[120px]">
                         <span className="block truncate text-[13.5px] font-medium text-fx-ink">
-                          {account.name}
+                          {row.title}
                         </span>
                         <span className="mt-[5px] block font-fx-mono text-[10.5px] leading-none text-fx-ink-3">
-                          ILS · {account.category}
+                          {row.subtitle}
                         </span>
                       </span>
                       {!compact && (
@@ -123,18 +167,17 @@ export default function AccountsByPerson({
                         </span>
                       )}
                       <span className="flex-none text-right">
-                        <span className="fx-num block text-base text-fx-ink">
-                          {nis(account.balance)}
+                        <span
+                          data-testid={`account-row-${row.key}-total`}
+                          className="fx-num block text-base text-fx-ink"
+                        >
+                          {nis(row.balance)}
                         </span>
                         <span
                           className="mt-1 block text-[11px]"
                           style={{ color: signColor(rangeChange) }}
                         >
-                          {pct(
-                            account.values[start]
-                              ? (rangeChange / account.values[start]) * 100
-                              : 0
-                          )}
+                          {pct(row.values[start] ? (rangeChange / row.values[start]) * 100 : 0)}
                         </span>
                       </span>
                       <span className="w-4 flex-none text-center text-[11px] text-fx-ink-3">
@@ -157,31 +200,22 @@ export default function AccountsByPerson({
                           />
                           <StatTile
                             label="Share of net worth"
-                            value={pct((account.balance / (netWorth || 1)) * 100).replace("+", "")}
+                            value={pct((row.balance / (netWorth || 1)) * 100).replace("+", "")}
                           />
                         </div>
                         <svg
                           viewBox="0 0 1000 220"
                           preserveAspectRatio="none"
-                          aria-label={`${account.name} balance history`}
+                          aria-label={`${row.title} balance history`}
                           className="block h-[140px] w-full"
                         >
                           <defs>
-                            <linearGradient
-                              id={`acct-${account.id}`}
-                              x1="0"
-                              y1="0"
-                              x2="0"
-                              y2="1"
-                            >
+                            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                               <stop offset="0" stopColor={accentColor} stopOpacity="0.25" />
                               <stop offset="1" stopColor={accentColor} stopOpacity="0" />
                             </linearGradient>
                           </defs>
-                          <path
-                            d={areaPath(window, lo, hi, 220, 12)}
-                            fill={`url(#acct-${account.id})`}
-                          />
+                          <path d={areaPath(window, lo, hi, 220, 12)} fill={`url(#${gradientId})`} />
                           <path
                             d={linePath(window, lo, hi, 220, 12)}
                             fill="none"

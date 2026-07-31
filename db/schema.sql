@@ -156,7 +156,8 @@ CREATE VIEW moneyman.combined_transactions AS
     t.installments,
     t.raw,
     t.created_at,
-    t.updated_at
+    t.updated_at,
+    NULL::text AS cash_flow_type
    FROM moneyman.transactions t
 UNION
  SELECT tm.unique_id,
@@ -174,7 +175,8 @@ UNION
     NULL::jsonb AS installments,
     NULL::jsonb AS raw,
     tm.created_at,
-    tm.updated_at
+    tm.updated_at,
+    (tm.cash_flow_type)::text AS cash_flow_type
    FROM moneyman.transactions_manual tm
   WHERE (tm.show_in_transactions IS TRUE);
 
@@ -329,7 +331,8 @@ CREATE VIEW moneyman.processed_transcations_with_categories AS
     t.identifier,
     t.installments,
     t.created_at,
-    t.updated_at
+    t.updated_at,
+    t.cash_flow_type
    FROM ((moneyman.combined_transactions t
      LEFT JOIN moneyman.wolt_transactions_all_info w ON ((t.unique_id = w.unique_id)))
      LEFT JOIN moneyman.description_to_category dtc ON (((COALESCE(w.mapped_description, (t.description)::character varying))::text = dtc.description)));
@@ -587,4 +590,5 @@ ALTER TABLE ONLY moneyman.business_transaction_mappings
 INSERT INTO moneyman.schema_migrations (version) VALUES
     ('20260417000000'),
     ('20260522000000'),
-    ('20260703000000');
+    ('20260703000000'),
+    ('20260731000000');

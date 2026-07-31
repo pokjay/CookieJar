@@ -46,15 +46,52 @@ def get_distinct_accounts() -> list[str]:
     return df["account"].tolist()
 
 
+# Sign each manual cash_flow_type carries under the app's convention, where a
+# positive charged_amount means money spent. savings and internal_transfer are
+# deliberately absent: they are neither spend nor income, so their amount is
+# left as recorded and callers filter them out by cash_flow_type instead.
+_INTENT_SIGN = {"expense": 1, "salary": -1, "other_income": -1}
+
+#: cash_flow_type values whose sign is derived from intent by
+#: :func:`normalize_manual_signs`, and which must therefore not also be flipped
+#: by the per-account ``sign_flipped_accounts`` rule.
+NORMALIZED_INTENTS = frozenset(_INTENT_SIGN)
+
+
+def normalize_manual_signs(df: pd.DataFrame) -> pd.DataFrame:
+    """Give manually-imported rows a sign that matches what they mean.
+
+    Manual rows keep whatever sign the source bank exported — the bank accounts
+    write expenses negative, the card accounts write them positive — and the
+    view negates them a second time on the way out. Sign alone therefore cannot
+    say whether a manual row is spend, which silently dropped bank-paid
+    expenses (rent, daycare) from anything filtering on ``charged_amount > 0``.
+
+    ``cash_flow_type`` is the intent recorded at import, so use it: expenses
+    come out positive, income negative. Scraped rows have no intent recorded
+    and are left to the per-account ``sign_flipped_accounts`` rule.
+    """
+    if "cash_flow_type" not in df.columns:
+        return df
+
+    df = df.copy()
+    for intent, sign in _INTENT_SIGN.items():
+        rows = df["cash_flow_type"] == intent
+        df.loc[rows, "charged_amount"] = sign * df.loc[rows, "charged_amount"].abs()
+    return df
+
+
 def get_all_transactions() -> pd.DataFrame:
     """Get all processed transactions with categories."""
     if is_mock_mode():
         return get_transactions()
 
-    return run_query("""
-        SELECT * FROM processed_transcations_with_categories
-        ORDER BY activity_date DESC
-    """)
+    return normalize_manual_signs(
+        run_query("""
+            SELECT * FROM processed_transcations_with_categories
+            ORDER BY activity_date DESC
+        """)
+    )
 
 
 def get_transactions_excluding_travel() -> pd.DataFrame:
