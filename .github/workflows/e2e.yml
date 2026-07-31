@@ -10,6 +10,15 @@ permissions:
 
 jobs:
   e2e:
+    # Release PRs only bump version strings in the manifests and lockfiles —
+    # there is no app behaviour to exercise, and the commits being released
+    # already ran e2e on their own PRs and run it again on push to main.
+    #
+    # This has to be a job-level skip rather than a branch filter on `on:`.
+    # e2e is a required status check: a workflow that never runs leaves it
+    # pending forever and blocks the release PR from merging, whereas a skipped
+    # job reports as satisfied. `head_ref` is empty on push, so main still runs.
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
