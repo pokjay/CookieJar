@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.12.0](https://github.com/pokjay/CookieJar/compare/v0.11.0...v0.12.0) (2026-07-31)
+
+
+### Features
+
+* **scraper:** choose which accounts to sync ([#154](https://github.com/pokjay/CookieJar/issues/154)) ([e682a7f](https://github.com/pokjay/CookieJar/commit/e682a7ff597bb67b7bc16d9f8e79e241c3ede2e4))
+
 ## [0.11.0](https://github.com/pokjay/CookieJar/compare/v0.10.0...v0.11.0) (2026-07-31)
 
 
