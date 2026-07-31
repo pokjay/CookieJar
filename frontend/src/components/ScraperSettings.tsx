@@ -11,6 +11,7 @@ import {
   ApiError,
 } from "@/lib/api";
 import type { ScraperAccount, ScraperStatus } from "@/lib/types";
+import { PROVIDER_LABELS } from "@/lib/constants";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
 // Isracard and Amex both authenticate with a national ID + 6-digit card number.
@@ -31,13 +32,6 @@ const PROVIDER_FIELDS: Record<string, { key: string; label: string; type?: strin
   visaCal: USERNAME_PASSWORD_FIELDS,
   max: USERNAME_PASSWORD_FIELDS,
   amex: ID_CARD6_PASSWORD_FIELDS,
-};
-
-const PROVIDER_LABELS: Record<string, string> = {
-  isracard: "Isracard",
-  visaCal: "Visa Cal",
-  max: "Max",
-  amex: "American Express",
 };
 
 // ── PasswordModal ──────────────────────────────────────────────────────────────

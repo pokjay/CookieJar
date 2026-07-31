@@ -24,3 +24,12 @@ export const PERSON_COLOR_PALETTE = [
 export function getPersonColor(person: string, index: number): string {
   return PERSON_COLOR_PALETTE[index % PERSON_COLOR_PALETTE.length];
 }
+
+// Display names for the scraper's provider ids (the backend's PROVIDER_SCHEMAS
+// keys). Shared by ScraperSettings and the sync account picker.
+export const PROVIDER_LABELS: Record<string, string> = {
+  isracard: "Isracard",
+  visaCal: "Visa Cal",
+  max: "Max",
+  amex: "American Express",
+};

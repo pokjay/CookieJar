@@ -106,6 +106,35 @@ def _record_failed_attempt(request: Request) -> None:
     _rate_limit[key] = hits
 
 
+def _select_accounts(
+    credentials: list[dict[str, Any]], account_uuids: list[str] | None
+) -> list[dict[str, Any]]:
+    """Narrow the vault's credentials to the caller's selection.
+
+    None means "all accounts" (the pre-selection behaviour). An explicit empty
+    list is a caller mistake, not a shorthand for all — falling back to the
+    whole vault when the user unticked everything is the one outcome that must
+    never happen, so it surfaces as 422 alongside unknown UUIDs.
+
+    Errors report a count, never the account titles: this response crosses the
+    API boundary and titles are user data.
+    """
+    if account_uuids is None:
+        return credentials
+    known = {c["uuid"] for c in credentials}
+    unknown = sum(1 for u in account_uuids if u not in known)
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{unknown} selected account(s) are no longer in the vault.",
+        )
+    wanted = set(account_uuids)
+    selected = [c for c in credentials if c["uuid"] in wanted]
+    if not selected:
+        raise HTTPException(status_code=422, detail="No accounts selected.")
+    return selected
+
+
 def _mock_guard() -> None:
     """Sync needs a real database; vault management is pure file I/O and stays available."""
     if is_mock_mode():
@@ -144,6 +173,9 @@ class DeleteAccountPayload(BaseModel):
 class SyncPayload(BaseModel):
     db_password: SecretStr
     lookback_days: int = Field(..., ge=1, le=90)
+    # Vault UUIDs to scrape. Omitted (None) means every account, which is what
+    # a sync did before selection existed — so old clients keep working.
+    account_uuids: list[str] | None = None
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -258,6 +290,10 @@ def scraper_sync(
 
     if not credentials:
         raise HTTPException(status_code=422, detail="No accounts in vault.")
+
+    # Narrow before insert_run, so an unusable selection 422s without leaving a
+    # run row behind that scrapes nothing.
+    credentials = _select_accounts(credentials, payload.account_uuids)
 
     # has_running_run() above is a cheap pre-check, not an atomic guard — a
     # concurrent request can race past it too. insert_run() relies on the DB's
