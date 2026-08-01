@@ -9,6 +9,7 @@ import { ScraperErrorTypes } from "israeli-bank-scrapers/lib/scrapers/errors.js"
 import { CompanyTypes } from "israeli-bank-scrapers";
 
 import {
+  attachTrace,
   classifyError,
   createApp,
   FUTURE_MONTHS_TO_SCRAPE,
@@ -24,6 +25,7 @@ import {
   SAFE_ERROR_TYPES,
   traceMode,
   traceUrl,
+  withTimestamp,
 } from "../src/app.js";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -486,5 +488,112 @@ describe("auth", () => {
       assert.equal(res.status, 200);
       assert.deepEqual(await res.json(), { status: "ok" });
     });
+  });
+});
+
+// ── every emitted line carries a timestamp (#151) ────────────────────────────
+
+// A puppeteer Page stand-in that only does what attachTrace uses: register
+// handlers by event name, and let the test fire them.
+function fakePage() {
+  const handlers = {};
+  return {
+    on: (event, fn) => {
+      (handlers[event] ||= []).push(fn);
+    },
+    once: () => {},
+    emit: (event, arg) => (handlers[event] || []).forEach((fn) => fn(arg)),
+  };
+}
+
+const ISO_8601_MS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+describe("log timestamps", () => {
+  test("withTimestamp prefixes the format string and keeps every argument", () => {
+    const calls = [];
+    const stamped = withTimestamp((...args) => calls.push(args), () => "2026-07-31T20:35:00.000Z");
+    const boom = new Error("browser disconnected");
+
+    // The trailing `boom` has no %s of its own — console.error appends such
+    // extras, and that behaviour must survive the wrapping.
+    stamped("[scrape %s] underlying error:", "visaCal", boom);
+
+    assert.deepEqual(calls, [
+      ["%s [scrape %s] underlying error:", "2026-07-31T20:35:00.000Z", "visaCal", boom],
+    ]);
+  });
+
+  test("the stamp is a real ISO-8601 instant, not a rendered string", () => {
+    const calls = [];
+    withTimestamp((...args) => calls.push(args))("[trace] nav  %s", "https://example.com/");
+
+    const stamp = calls[0][1];
+    assert.match(stamp, ISO_8601_MS);
+    // Absolute wall clock, so these lines can be lined up against the backend's.
+    assert.ok(Math.abs(Date.parse(stamp) - Date.now()) < 60_000);
+  });
+
+  test("every [trace] line is stamped — nav, request and response alike", () => {
+    const lines = [];
+    const page = fakePage();
+    attachTrace(page, (...args) => lines.push(args), "first-party");
+
+    page.emit("framenavigated", { url: () => "https://www.max.co.il/login" });
+    page.emit("request", {
+      resourceType: () => "xhr",
+      method: () => "POST",
+      url: () => "https://www.max.co.il/api/login/login",
+    });
+    page.emit("response", {
+      request: () => ({ resourceType: () => "xhr" }),
+      status: () => 429,
+      url: () => "https://digital.isracard.co.il/services/ProxyRequestHandler.ashx",
+    });
+
+    assert.equal(lines.length, 3, "expected nav + request + response");
+    for (const [format, stamp] of lines) {
+      assert.ok(format.startsWith("%s [trace] "), `unstamped trace line: ${format}`);
+      assert.match(stamp, ISO_8601_MS);
+    }
+  });
+
+  test("trace timestamps advance, so a gap in the timeline is measurable", () => {
+    // The whole point of #151: two lines must be distinguishable in time, not
+    // just in order. A clock sampled once at attach would defeat that.
+    const stamps = [];
+    let tick = 0;
+    const stamped = withTimestamp(
+      (_format, stamp) => stamps.push(stamp),
+      () => new Date(1_780_000_000_000 + tick++ * 2_500).toISOString(),
+    );
+
+    stamped("[trace] ->   %s", "a");
+    stamped("[trace] ->   %s", "b");
+
+    assert.equal(Date.parse(stamps[1]) - Date.parse(stamps[0]), 2_500);
+  });
+
+  test("[scrape …] failure lines are stamped without losing their evidence", () => {
+    const lines = [];
+    const log = (...args) => lines.push(args);
+    const result = { errorType: "GENERIC", errorMessage: "Block Automation" };
+
+    logFailure("isracard", "generic-error", {}, null, result, log);
+
+    for (const [format, stamp] of lines) {
+      assert.ok(format.startsWith("%s [scrape "), `unstamped scrape line: ${format}`);
+      assert.match(stamp, ISO_8601_MS);
+    }
+    // The library's own errorType/errorMessage still reach the log.
+    assert.ok(lines.some((args) => args.includes("GENERIC") && args.includes("Block Automation")));
+  });
+
+  test("SCRAPER_TRACE=off still emits nothing at all", () => {
+    const lines = [];
+    const page = fakePage();
+    attachTrace(page, (...args) => lines.push(args), "off");
+
+    page.emit("framenavigated", { url: () => "https://www.max.co.il/login" });
+    assert.deepEqual(lines, []);
   });
 });
