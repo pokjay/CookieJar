@@ -162,10 +162,15 @@ export function withTimestamp(log, clock = () => new Date().toISOString()) {
   return (format, ...args) => log(`%s ${format}`, clock(), ...args);
 }
 
-// The default sink, used by the call sites that don't take an injectable log.
-const stampedConsole = withTimestamp(console.error);
+// withTimestamp (and the default sinks below) call their log as a plain
+// function, which would strip console.error of its `this` receiver — some
+// console/logger implementations need it. Bind once and reuse everywhere.
+const errorLog = console.error.bind(console);
 
-export function attachTrace(page, log = console.error, mode = traceMode()) {
+// The default sink, used by the call sites that don't take an injectable log.
+const stampedConsole = withTimestamp(errorLog);
+
+export function attachTrace(page, log = errorLog, mode = traceMode()) {
   if (mode === "off") return;
   const skip = (url) => mode !== "full" && isTrackerUrl(url);
   const out = withTimestamp(log);
@@ -213,7 +218,7 @@ export function isFieldRejected(state) {
 
 // Polls the login field's validity. Reads only the value's LENGTH and Angular's
 // validity class — never the value, which is a live credential.
-export function watchLoginForm(page, guard, diagnostics, log = console.error) {
+export function watchLoginForm(page, guard, diagnostics, log = errorLog) {
   const out = withTimestamp(log);
   let previous = null;
   const timer = setInterval(async () => {
@@ -311,7 +316,7 @@ export const FUTURE_MONTHS_TO_SCRAPE = 3;
 // page told us why (a field its own form rejected), lead with that — the library
 // error underneath it is just the symptom ("Navigation timeout of 30000 ms
 // exceeded" for a login that was never submitted). log is injectable for tests.
-export function logFailure(companyId, errorType, diagnostics, err, result, log = console.error) {
+export function logFailure(companyId, errorType, diagnostics, err, result, log = errorLog) {
   const out = withTimestamp(log);
   // A guard whose site internals rotted (Cal redesigns, the selector or frame
   // URL stops matching) would otherwise fail silently — failures would regress
