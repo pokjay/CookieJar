@@ -68,6 +68,37 @@ def execute_mutations_batch(sql: str, params_list: list[dict]) -> int:
     return total
 
 
+def execute_upserts_batch(sql: str, params_list: list[dict]) -> tuple[int, int]:
+    """Run an upsert for many param sets in one transaction, counting inserts
+    and updates separately. Returns (inserted, updated).
+
+    execute_mutations_batch's rowcount cannot tell the two apart: under
+    ON CONFLICT ... DO UPDATE an update reports rowcount 1 exactly as an insert
+    does, so a re-scrape of rows we already had would inflate the "imported"
+    figure the sync reports. The statement must therefore end with
+
+        RETURNING (xmax = 0) AS inserted
+
+    - xmax is zero on a freshly inserted tuple and non-zero on one produced by
+    the conflict path. A statement whose DO UPDATE carries a WHERE guard returns
+    no row at all when the guard rejects it, which is how a genuine no-op
+    re-scrape counts as neither.
+    """
+    if not params_list:
+        return (0, 0)
+    engine = _get_engine()
+    inserted = 0
+    updated = 0
+    with engine.begin() as conn:
+        for params in params_list:
+            for row in conn.execute(text(sql), params):
+                if row.inserted:
+                    inserted += 1
+                else:
+                    updated += 1
+    return (inserted, updated)
+
+
 def get_enum_values(enum_name: str) -> list[str]:
     """Get the allowed values for a PostgreSQL enum type."""
     engine = _get_engine()

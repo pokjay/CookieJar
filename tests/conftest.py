@@ -59,6 +59,56 @@ def _extract_up_sql(migration_path: Path) -> str:
     return content.split("-- migrate:up")[1].split("-- migrate:down")[0].strip()
 
 
+def _split_statements(sql: str) -> list[str]:
+    """Split a migration's SQL into statements on semicolons that actually
+    terminate one.
+
+    A plain sql.split(";") is wrong, and silently so: a semicolon inside a `--`
+    comment or a quoted literal cuts the statement in half, and the leading
+    fragment is often still valid SQL, so the failure surfaces far from its
+    cause. 20260731000000_expose_cash_flow_type.sql has exactly that -
+    "cash_flow_type is an enum; the scraped branch..." inside a CREATE VIEW -
+    which truncated the view at the comment and errored with "syntax error at
+    end of input", taking every integration test in the suite down with it.
+
+    Comments are stripped rather than preserved: only the executable SQL matters
+    here, and dropping them removes the whole class of problem. Handles `--`
+    line comments and single-quoted literals, which is everything these
+    migrations use (no dollar-quoted bodies - see db/migrations/).
+    """
+    statements: list[str] = []
+    current: list[str] = []
+    in_string = False
+    i = 0
+    while i < len(sql):
+        char = sql[i]
+        if in_string:
+            current.append(char)
+            # '' is an escaped quote inside a literal, not the end of one.
+            if char == "'":
+                if sql[i + 1 : i + 2] == "'":
+                    current.append("'")
+                    i += 1
+                else:
+                    in_string = False
+        elif char == "'":
+            in_string = True
+            current.append(char)
+        elif sql.startswith("--", i):
+            i = sql.find("\n", i)
+            if i == -1:
+                break
+            current.append("\n")
+        elif char == ";":
+            statements.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+        i += 1
+    statements.append("".join(current))
+    return [s.strip() for s in statements if s.strip()]
+
+
 @pytest.fixture(scope="session")
 def integration_engine():
     """SQLAlchemy engine pointing at the integration test database.
@@ -82,8 +132,7 @@ def migrated_db(integration_engine):
     with integration_engine.begin() as conn:
         conn.exec_driver_sql("DROP SCHEMA IF EXISTS moneyman CASCADE")
         for migration_file in migration_files:
-            up_sql = _extract_up_sql(migration_file)
-            for stmt in [s.strip() for s in up_sql.split(";") if s.strip()]:
+            for stmt in _split_statements(_extract_up_sql(migration_file)):
                 conn.exec_driver_sql(stmt)
 
     yield integration_engine
@@ -118,9 +167,18 @@ def seeded_db(migrated_db):
     # don't exist on the base table and add the required `raw` jsonb column.
     transactions = get_transactions()[
         [
-            "unique_id", "company_id", "account", "status", "activity_date",
-            "charged_amount", "charged_currency", "original_amount",
-            "original_currency", "description", "memo", "identifier",
+            "unique_id",
+            "company_id",
+            "account",
+            "status",
+            "activity_date",
+            "charged_amount",
+            "charged_currency",
+            "original_amount",
+            "original_currency",
+            "description",
+            "memo",
+            "identifier",
         ]
     ].copy()
     transactions["raw"] = "{}"

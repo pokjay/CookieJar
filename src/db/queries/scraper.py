@@ -30,7 +30,8 @@ def get_last_run() -> dict | None:
 
     accounts_df = run_query(
         """
-        SELECT account, company_id, status, error_type, error_message, transactions_imported
+        SELECT account, company_id, status, error_type, error_message,
+               transactions_imported, enrichment_added, enrichment_missing
         FROM scraper_run_accounts
         WHERE run_id = :run_id ::uuid
         ORDER BY company_id, account
@@ -48,6 +49,15 @@ def get_last_run() -> dict | None:
             # JSON-serialisable and would surface as the string "nan" downstream.
             "error_message": r["error_message"] if pd.notna(r["error_message"]) else None,
             "transactions_imported": int(r["transactions_imported"]),
+            # NULL here means enrichment did not apply to this account at all,
+            # which the UI renders as "no counter" rather than as zero — those
+            # are different statements and only one of them is true for max.
+            "enrichment_added": (
+                int(r["enrichment_added"]) if pd.notna(r["enrichment_added"]) else None
+            ),
+            "enrichment_missing": (
+                int(r["enrichment_missing"]) if pd.notna(r["enrichment_missing"]) else None
+            ),
         }
         for _, r in accounts_df.iterrows()
     ]
@@ -70,3 +80,75 @@ def has_running_run() -> bool:
         "SELECT 1 FROM scraper_runs WHERE status = 'running' LIMIT 1"
     )
     return not df.empty
+
+
+def enriched_identifiers(company_id: str, start_date: str) -> list[str]:
+    """Transaction identifiers in this window that already carry a bank category.
+
+    This is the scraper sidecar's skip set: one PirteyIska_204 request per entry
+    is a request it does not have to make (see scraper/src/enrichment.js). It
+    lists what IS enriched rather than what is missing on purpose - a
+    transaction the provider has but we have never seen is in neither list, and
+    must be fetched, not assumed done.
+
+    An identifier qualifies only when EVERY row carrying it is enriched, which
+    is why this groups rather than selecting distinct. Identifiers are not
+    unique per row: ~1-3% of them are shared by two rows on the SAME card,
+    installments splitting one voucher number across billing months. The
+    sidecar cannot tell those apart - all it sees is `shovarRatz` in the URL,
+    and the finest key available to it, (CardIndex, identifier, month), needs a
+    month bucket that is not recoverable from what we store.
+
+    So the discrimination has to happen here, and the safe direction is obvious:
+    "any row still missing a category" means fetch, not skip. Getting it wrong
+    that way costs one extra request on a handful of identifiers. Getting it
+    wrong the other way skips a row forever, and since that row is still in the
+    scrape's output it also counts as missing forever - the stuck counter this
+    whole design exists to avoid.
+    """
+    if is_mock_mode():
+        return []
+    df = run_query(
+        """
+        SELECT identifier
+        FROM transactions
+        WHERE company_id = :company_id
+          AND activity_date >= :start_date ::date
+          AND identifier IS NOT NULL
+        GROUP BY identifier
+        HAVING count(*) FILTER (WHERE bank_category IS NULL) = 0
+        """,
+        {"company_id": company_id, "start_date": start_date},
+    )
+    if df.empty:
+        return []
+    return [str(v).strip() for v in df["identifier"].tolist()]
+
+
+def pending_enrichment_count(unique_ids: list[str]) -> int:
+    """How many of the transactions THIS SCRAPE returned still have no category.
+
+    Scoped to the scrape's own output rather than to the lookback window, because
+    the two do not agree at the edges and the difference is not cosmetic: a
+    window-scoped count includes rows stored by an older sync that the provider
+    has since stopped returning, and nothing can ever enrich those. Observed
+    live - four amex rows dated 2026-06-28 sat exactly on a 40-day boundary
+    whose scrape started at 2026-06-29, so every re-run reported "4 missing",
+    asked about none of them, and the number never moved.
+
+    Counting only what the scrape actually returned makes the figure mean what
+    the UI claims it means: how much a re-run over the same window could still
+    fix. Rows the provider has dropped fall out on their own.
+    """
+    if is_mock_mode() or not unique_ids:
+        return 0
+    df = run_query(
+        """
+        SELECT count(*) AS pending
+        FROM transactions
+        WHERE unique_id = ANY(:unique_ids)
+          AND bank_category IS NULL
+        """,
+        {"unique_ids": list(unique_ids)},
+    )
+    return int(df["pending"].iloc[0]) if not df.empty else 0

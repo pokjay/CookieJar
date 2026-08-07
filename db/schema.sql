@@ -1,7 +1,7 @@
 \restrict dbmate
 
--- Dumped from database version 16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)
--- Dumped by pg_dump version 16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)
+-- Dumped from database version 16.14 (Debian 16.14-1.pgdg13+1)
+-- Dumped by pg_dump version 16.14 (Debian 16.14-1.pgdg13+1)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -109,7 +109,8 @@ CREATE TABLE moneyman.transactions (
     installments jsonb,
     raw jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    bank_category text
 );
 
 
@@ -360,6 +361,8 @@ CREATE TABLE moneyman.scraper_run_accounts (
     error_type text,
     transactions_imported integer DEFAULT 0 NOT NULL,
     error_message text,
+    enrichment_added integer,
+    enrichment_missing integer,
     CONSTRAINT scraper_run_accounts_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'success'::text, 'error'::text])))
 );
 
@@ -554,6 +557,13 @@ CREATE INDEX transactions_company_account_date_idx ON moneyman.transactions USIN
 
 
 --
+-- Name: transactions_pending_enrichment_idx; Type: INDEX; Schema: moneyman; Owner: -
+--
+
+CREATE INDEX transactions_pending_enrichment_idx ON moneyman.transactions USING btree (company_id, activity_date) WHERE (bank_category IS NULL);
+
+
+--
 -- Name: investment_accounts_tracking investment_accounts_tracking_investment_accounts_id_fkey; Type: FK CONSTRAINT; Schema: moneyman; Owner: -
 --
 
@@ -593,4 +603,5 @@ INSERT INTO moneyman.schema_migrations (version) VALUES
     ('20260522000000'),
     ('20260703000000'),
     ('20260731000000'),
-    ('20260807000000');
+    ('20260807000000'),
+    ('20260807190000');

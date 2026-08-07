@@ -1,6 +1,13 @@
 import express from "express";
 import { CompanyTypes, createScraper } from "israeli-bank-scrapers";
 
+import {
+  DEFAULT_DELAY_MS,
+  EnrichmentGovernor,
+  runWithGovernor,
+  summarizeEnrichment,
+} from "./enrichment.js";
+
 // Wire-format error vocabulary: the ONLY errorType values this service may
 // return for a failed scrape (plus "unknown" from classifyError's null case).
 // The backend and frontend key off these; anything outside the set risks
@@ -64,16 +71,19 @@ export function scrubError(err) {
 export const FAILURE_EXPLANATIONS = [
   {
     // Thrown by the library's assertAutomationNotBlocked() on a 429 or an
-    // anti-bot interstitial. For isracard/amex this is nearly always the
-    // per-transaction "extra details" fetch exhausting its budget: that request
-    // fires once per transaction PER MONTH PER CARD, so it grows
-    // multiplicatively while the rest of the scrape is a handful of calls.
+    // anti-bot interstitial. This used to be, nearly always, the
+    // per-transaction extra-details fetch exhausting its budget — but the
+    // enrichment governor now absorbs those and lets the scrape finish
+    // unenriched (see scraper/src/enrichment.js). So a 429 that still reaches
+    // here hit the login or the transaction fetch itself, which means an
+    // IP-level block that is already in force before the scrape begins, and
+    // turning enrichment off would not have helped.
     match: /automation detected and blocked|block automation|bot detection|status: 429|\b429\b/i,
     detail:
       "The provider rate-limited the scraper (HTTP 429) and blocked further automated requests. " +
-      "This is almost always the per-transaction extra-details fetch, which runs once per " +
-      "transaction per month per card. Retry with extra transaction details turned off, or " +
-      "with a shorter lookback.",
+      "This block hit the login or the transaction fetch, not the optional extra-details pass, " +
+      "so it is an address-level block that was already in force. Wait for it to clear before " +
+      "retrying — scraping again right away tends to extend it.",
   },
   {
     match: /navigation timeout|timeout of \d+ ?ms/i,
@@ -446,6 +456,18 @@ export function logFailure(companyId, errorType, diagnostics, err, result, log =
   );
 }
 
+// A one-line account of what the enrichment pass actually did, so "why are
+// categories still missing" is answerable from the log without new
+// instrumentation. Silent for providers that never enrich (max, visaCal) and
+// for runs where the caller did not ask for it, so it costs nothing there.
+//
+// Counts only. The identifiers and URLs behind them stay out of the log for the
+// same reason traceUrl drops query strings.
+export function logEnrichment(companyId, stats, log = errorLog) {
+  if (!stats || stats.requested === 0) return;
+  withTimestamp(log)("[enrich %s] %s", companyId, summarizeEnrichment(stats));
+}
+
 // scraperFactory and token are injectable for tests; production (src/index.js)
 // uses the defaults.
 export function createApp({
@@ -469,12 +491,27 @@ export function createApp({
   });
 
   app.post("/scrape", authMiddleware, async (req, res) => {
-    // Off unless the caller asks for it. The extra-details pass is what gets
-    // isracard/amex rate-limited (see FAILURE_EXPLANATIONS), and the only field
-    // it adds — the provider's own category string — is not read by CookieJar,
-    // which categorises from its own description_to_category table. So the
-    // default buys nothing and costs a whole scrape when it trips the 429.
-    const { account, startDate, additionalTransactionInformation = false } = req.body;
+    // The extra-details pass is what gets isracard/amex rate-limited (see
+    // FAILURE_EXPLANATIONS). It is no longer fatal — the governor below paces
+    // it, budgets it and absorbs a 429 — but it is still the caller's call,
+    // because only the caller knows which transactions it already has enriched
+    // and how much wall-clock the whole sync can afford.
+    //
+    //   enrichedIdentifiers      transaction identifiers already enriched; skipped for free
+    //   enrichmentBudgetSeconds  wall-clock ceiling for this account's enrichment
+    //   enrichmentDelayMs        pacing between consecutive enrichment requests
+    //
+    // Omitting the budget means no ceiling, which is what a caller that predates
+    // these fields expects — it still gets the serial pacing and the 429
+    // absorption, just no wall-clock stop.
+    const {
+      account,
+      startDate,
+      additionalTransactionInformation = false,
+      enrichedIdentifiers = [],
+      enrichmentBudgetSeconds = null,
+      enrichmentDelayMs = DEFAULT_DELAY_MS,
+    } = req.body;
 
     if (!account || !account.companyId || !account.credentials) {
       return res.status(400).json({ errorType: "generic-error", transactions: [] });
@@ -513,12 +550,19 @@ export function createApp({
       return res.status(400).json({ errorType: "generic-error", transactions: [] });
     }
 
+    const governor = new EnrichmentGovernor({
+      enrichedIdentifiers,
+      budgetSeconds: enrichmentBudgetSeconds,
+      delayMs: enrichmentDelayMs,
+    });
+
     let result;
     try {
-      result = await scraper.scrape(credentials);
+      result = await runWithGovernor(governor, () => scraper.scrape(credentials));
     } catch (err) {
       const errorType = resolveThrownErrorType(err, diagnostics);
       logFailure(companyId, errorType, diagnostics, err);
+      logEnrichment(companyId, governor.stats);
       return res.json({
         errorType,
         errorMessage: describeFailure(errorType, err?.message, diagnostics),
@@ -530,6 +574,7 @@ export function createApp({
     if (!result.success) {
       const errorType = resolveErrorType(result.errorType, diagnostics);
       logFailure(companyId, errorType, diagnostics, null, result);
+      logEnrichment(companyId, governor.stats);
       return res.json({
         errorType,
         errorMessage: describeFailure(errorType, result.errorMessage, diagnostics),
@@ -551,7 +596,8 @@ export function createApp({
       }
     }
 
-    res.json({ transactions, accountNumber, errorType: null });
+    logEnrichment(companyId, governor.stats);
+    res.json({ transactions, accountNumber, errorType: null, enrichment: governor.stats });
   });
 
   return app;

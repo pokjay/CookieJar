@@ -234,10 +234,21 @@ def _run_sync_extra_details(payload):
     return tasks.tasks[0].args[3]
 
 
-def test_sync_defaults_extra_details_off():
+def test_sync_defaults_extra_details_on():
     """#149: the per-transaction enrichment fetch is what gets isracard/amex
-    rate-limited, so a client that doesn't ask for it must not get it."""
+    rate-limited, and it used to default off because that 429 threw away the
+    whole scrape. Now the sidecar's governor absorbs the 429 and the pass runs
+    on a budget, so the worst case is a slower sync with some categories left
+    for next time — and the default is on, since a client that never asks would
+    otherwise never get the categories at all."""
     payload = scraper_router.SyncPayload(db_password="pw", lookback_days=7)
+    assert _run_sync_extra_details(payload) is True
+
+
+def test_sync_lets_a_client_turn_extra_details_off():
+    payload = scraper_router.SyncPayload(
+        db_password="pw", lookback_days=7, additional_transaction_info=False
+    )
     assert _run_sync_extra_details(payload) is False
 
 

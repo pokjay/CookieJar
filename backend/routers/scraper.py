@@ -176,9 +176,13 @@ class SyncPayload(BaseModel):
     # Vault UUIDs to scrape. Omitted (None) means every account, which is what
     # a sync did before selection existed — so old clients keep working.
     account_uuids: list[str] | None = None
-    # Opt-in per run. Fetching the provider's per-transaction extra details is
-    # what trips isracard/amex's 429 rate limit, so it is off unless asked for.
-    additional_transaction_info: bool = False
+    # Fetching the provider's per-transaction extra details (the bank category)
+    # is what trips isracard/amex's 429 rate limit. It used to default off
+    # because that 429 discarded the whole scrape; the sidecar's enrichment
+    # governor now absorbs it and the pass is budgeted, so the cost of leaving
+    # it on is a slower sync and some categories deferred to the next one —
+    # never a lost scrape. Still overridable per run.
+    additional_transaction_info: bool = True
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
