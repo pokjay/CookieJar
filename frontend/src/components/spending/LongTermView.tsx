@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Card } from "@/components/ledger/ui";
 import {
   categoryColor,
@@ -18,6 +18,9 @@ import { keyToYearMonth } from "./model";
 const MONTHS_BACK = 24;
 /** Label every quarter — 8 ticks across 24 months stays readable at card width. */
 const LABEL_EVERY = 3;
+/** Single source of truth: the overlays are positioned against this, so the bar
+ *  area's rendered height and the maths behind the tooltip can't drift apart. */
+const BAR_AREA_PX = 128;
 
 export default function LongTermView({
   model,
@@ -56,6 +59,22 @@ export default function LongTermView({
 
   const color = category ? categoryColor(category) : "var(--fx-accent)";
 
+  // Bars are category-specific, so clickability has to be too: a month can hold
+  // transactions in other categories and none in this one, and jumping there
+  // would land on an empty list. Presence, not a non-zero total — refunds can
+  // net a real month to 0.
+  const selectableKeys = useMemo(() => {
+    const keys = new Set<number>();
+    for (let i = 0; i < MONTHS_BACK; i++) {
+      const k = end - (MONTHS_BACK - 1) + i;
+      const present = category
+        ? model.categoryTotalsThrough(k, 31).has(category)
+        : model.byKey.has(k);
+      if (present) keys.add(k);
+    }
+    return keys;
+  }, [model, category, end]);
+
   const active = hovered === null ? null : bars[hovered];
   const activeYm = active ? keyToYearMonth(active.key) : null;
   // Keep the tooltip's centre off the card edges so it never spills out.
@@ -68,6 +87,7 @@ export default function LongTermView({
         type="button"
         onClick={onToggle}
         aria-expanded={open}
+        data-testid="long-term-toggle"
         className="flex w-full items-center gap-2.5 text-left"
       >
         <span className="text-[12.5px] font-semibold text-fx-ink">Long-term view</span>
@@ -82,26 +102,37 @@ export default function LongTermView({
         <div className="mt-[17px]">
           {/* pt leaves room for the tooltip to clear the tallest bar (~41px tall) */}
           <div className="relative pt-12" onPointerLeave={() => setHovered(null)}>
-            <div className="flex h-32 items-end gap-[2px]">
+            <div
+              className="flex items-end gap-[2px]"
+              style={{ height: BAR_AREA_PX }}
+              data-testid="long-term-bars"
+            >
               {bars.map((b, i) => {
                 const { year, month } = keyToYearMonth(b.key);
                 const isCurrent = b.key === key;
-                // Only months the model actually has are worth jumping to; the rest
-                // stay hoverable so the tooltip still explains the gap.
-                const selectable = !!onSelectMonth && !isCurrent && model.byKey.has(b.key);
+                // Every bar stays focusable so the readout is reachable by keyboard,
+                // but only the ones worth jumping to are actionable — the rest are
+                // marked aria-disabled rather than pretending to be live buttons.
+                const selectable = !!onSelectMonth && !isCurrent && selectableKeys.has(b.key);
+                const state = isCurrent
+                  ? " — currently shown"
+                  : selectable
+                    ? " — show this month"
+                    : category
+                      ? ` — no ${category} this month`
+                      : " — no data";
                 return (
                   <button
                     key={b.key}
                     type="button"
                     tabIndex={0}
+                    aria-disabled={!selectable}
                     onPointerEnter={() => setHovered(i)}
                     onFocus={() => setHovered(i)}
                     onBlur={() => setHovered((h) => (h === i ? null : h))}
                     onClick={selectable ? () => onSelectMonth(b.key) : undefined}
-                    aria-label={
-                      `${monthLabel(year, month)}: ${nis(b.value)}` +
-                      (selectable ? " — show this month" : "")
-                    }
+                    aria-label={`${monthLabel(year, month)}: ${nis(b.value)}${state}`}
+                    data-testid={`long-term-bar-${year}-${month + 1}`}
                     className={`flex h-full min-w-0 flex-1 flex-col justify-end rounded-t-[4px] focus:outline-none focus-visible:ring-2 focus-visible:ring-fx-accent ${
                       selectable ? "cursor-pointer" : "cursor-default"
                     }`}
@@ -122,7 +153,8 @@ export default function LongTermView({
             {/* Average across the 24 months — dashed so it never reads as data. */}
             <div
               className="pointer-events-none absolute inset-x-0 flex justify-end border-t border-dashed border-fx-ink-3"
-              style={{ bottom: `${(average / max) * 128}px` }}
+              style={{ bottom: `${(average / max) * BAR_AREA_PX}px` }}
+              data-testid="long-term-average"
             >
               <span className="-translate-y-[calc(100%+3px)] rounded-[4px] bg-fx-surface px-1 py-0.5 font-fx-mono text-[9.5px] leading-none text-fx-ink-3">
                 avg {nisShort(average)}
@@ -136,8 +168,9 @@ export default function LongTermView({
                 className="pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap rounded-[10px] border border-fx-line bg-fx-surface px-2.5 py-1.5 shadow-fx"
                 style={{
                   left: `${tipLeft}%`,
-                  bottom: `calc(${(active.value / max) * 128}px + 6px)`,
+                  bottom: `calc(${(active.value / max) * BAR_AREA_PX}px + 6px)`,
                 }}
+                data-testid="long-term-tooltip"
               >
                 <div className="fx-num text-[13px] leading-none text-fx-ink">
                   {nis(active.value)}

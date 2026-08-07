@@ -129,7 +129,10 @@ function Spending() {
             >
               <ChevronLeft size={15} />
             </button>
-            <span className="min-w-[112px] text-center text-[13px] font-semibold">
+            <span
+              data-testid="month-label"
+              className="min-w-[112px] text-center text-[13px] font-semibold"
+            >
               {monthLabel(y, m)}
             </span>
             <button
