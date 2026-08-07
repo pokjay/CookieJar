@@ -9,6 +9,25 @@ services:
     environment:
       NEXTAUTH_SECRET: "e2e-test-secret-not-for-production"
       AUTH_PASSWORD: "e2e-pass"
+    # 3002, not the app's 3001. Since the e2e stack runs under its own compose
+    # project (see COMPOSE_E2E), its frontend is a *separate* container from a
+    # running `make dev` rather than a replacement for it, so sharing the host
+    # port would make the two mutually exclusive — `make e2e` would die on "port
+    # is already allocated" whenever dev happened to be up. Playwright itself
+    # reaches the frontend at http://frontend:3000 over the internal network and
+    # does not use this mapping; it exists so `make e2e-up` stays debuggable.
+    # !override, not a plain list: compose MERGES `ports` by appending, so
+    # without it the base 3001 mapping survives alongside this one and the
+    # clash is still there.
+    ports: !override
+      - "3002:3000"
+
+  # Same clash, one layer down: docker-compose.db.yml publishes 5432 so `make
+  # dev-db` is reachable from the host, but the e2e database has no host-side
+  # consumer — playwright talks to it as PGHOST=db on the internal network. Drop
+  # the mapping so an e2e run can't collide with a running dev-db.
+  db:
+    ports: !reset []
 
   playwright:
     image: mcr.microsoft.com/playwright:v1.59.1-noble

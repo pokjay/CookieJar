@@ -2,7 +2,15 @@ COMPOSE      := docker compose
 COMPOSE_APP  := $(COMPOSE) -f docker-compose.yml
 COMPOSE_DEV  := $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
 COMPOSE_DEVDB := $(COMPOSE) -f docker-compose.yml -f docker-compose.db.yml -f docker-compose.dev.yml
-COMPOSE_E2E  := $(COMPOSE) -f docker-compose.yml -f docker-compose.build.yml -f docker-compose.db.yml -f docker-compose.test.yml
+# -p is load-bearing, not cosmetic. Every stack here otherwise shares the project
+# name derived from the directory ("cookiejar"), and the e2e file set inherits the
+# real app's volumes from docker-compose.yml — including keepass_data, which holds
+# the user's KeePass vault of live bank credentials. The `e2e` and `e2e-clean`
+# targets below run `down -v`, so under the shared name they DESTROY THE VAULT
+# (and the dev database) as a side effect of running the tests. Giving the e2e
+# stack its own project scopes its volumes to cookiejar-e2e_*, so `down -v` can
+# only ever reach test state. Costs one DB re-seed the first time it runs.
+COMPOSE_E2E  := $(COMPOSE) -p cookiejar-e2e -f docker-compose.yml -f docker-compose.build.yml -f docker-compose.db.yml -f docker-compose.test.yml
 
 SCRAPER_IMAGE := ghcr.io/pokjay/cookiejar-scraper:latest
 
