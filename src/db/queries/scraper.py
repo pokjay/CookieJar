@@ -91,22 +91,32 @@ def enriched_identifiers(company_id: str, start_date: str) -> list[str]:
     transaction the provider has but we have never seen is in neither list, and
     must be fetched, not assumed done.
 
-    Keyed on identifier alone, not (account, identifier): the enrichment URL
-    carries CardIndex, a per-login ordinal with no path back to the account
-    number stored here. Two cards under one login sharing an identifier would
-    therefore cost one transaction its category - acceptable for data that is
-    explicitly secondary to the transactions themselves.
+    An identifier qualifies only when EVERY row carrying it is enriched, which
+    is why this groups rather than selecting distinct. Identifiers are not
+    unique per row: ~1-3% of them are shared by two rows on the SAME card,
+    installments splitting one voucher number across billing months. The
+    sidecar cannot tell those apart - all it sees is `shovarRatz` in the URL,
+    and the finest key available to it, (CardIndex, identifier, month), needs a
+    month bucket that is not recoverable from what we store.
+
+    So the discrimination has to happen here, and the safe direction is obvious:
+    "any row still missing a category" means fetch, not skip. Getting it wrong
+    that way costs one extra request on a handful of identifiers. Getting it
+    wrong the other way skips a row forever, and since that row is still in the
+    scrape's output it also counts as missing forever - the stuck counter this
+    whole design exists to avoid.
     """
     if is_mock_mode():
         return []
     df = run_query(
         """
-        SELECT DISTINCT identifier
+        SELECT identifier
         FROM transactions
         WHERE company_id = :company_id
           AND activity_date >= :start_date ::date
-          AND bank_category IS NOT NULL
           AND identifier IS NOT NULL
+        GROUP BY identifier
+        HAVING count(*) FILTER (WHERE bank_category IS NULL) = 0
         """,
         {"company_id": company_id, "start_date": start_date},
     )

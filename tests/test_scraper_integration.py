@@ -270,6 +270,31 @@ def test_pending_count_ignores_rows_this_scrape_did_not_return(scraper_db):
     assert pending_enrichment_count([]) == 0, "a scrape that returned nothing owes nothing"
 
 
+def test_an_identifier_is_skippable_only_when_every_row_carrying_it_is_enriched(scraper_db):
+    """Identifiers are not unique per row: installments split one voucher number
+    across billing months, which is ~1-3% of them in real data (all on the SAME
+    card, so keying by account would not help). If one such row is enriched and
+    its twin is not, treating the identifier as done skips the twin forever -
+    and because the twin is still in the scrape's output, it is also counted as
+    missing forever."""
+    from src.db.mutations.scraper import upsert_transactions
+    from src.db.queries.scraper import enriched_identifiers
+
+    upsert_transactions(
+        [
+            # Two payments of one installment plan: same card, same identifier.
+            _txn_row(unique_id="inst-1", identifier="shared", bank_category="פארמה"),
+            _txn_row(unique_id="inst-2", identifier="shared", bank_category=None),
+            # A plain one-row identifier, fully enriched.
+            _txn_row(unique_id="solo", identifier="alone", bank_category="דלק"),
+        ]
+    )
+
+    skip = enriched_identifiers("isracard", "2026-05-01")
+    assert "alone" in skip
+    assert "shared" not in skip, "skipping this strands inst-2 with no category, permanently"
+
+
 def test_enriched_identifiers_and_pending_count_drive_the_skip_set(scraper_db):
     """What the next sync sends the sidecar, and what the UI shows as remaining.
     Both are windowed and per-company, so neither can leak across providers."""
