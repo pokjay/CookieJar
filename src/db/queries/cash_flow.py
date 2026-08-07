@@ -63,9 +63,10 @@ def _derive_cash_flow_from_manual(
         mask = df["account"].isin(sign_flipped_accounts)
         df.loc[mask, "charged_amount"] = -df.loc[mask, "charged_amount"]
 
-    # Derive cash flow columns from cash_flow_type. The monthly_cash_flow
-    # table (and mock data) store all columns as positive magnitudes, so use
-    # absolute amounts regardless of each bank's debit/credit sign convention.
+    # Derive cash flow columns from cash_flow_type. income/expense are
+    # magnitudes: "how much came in", "how much went out" — the direction is
+    # already in the column name, and each bank's debit/credit convention would
+    # otherwise leak through.
     cft = df["cash_flow_type"]
     amt = df["charged_amount"].abs()
 
@@ -76,9 +77,23 @@ def _derive_cash_flow_from_manual(
     df["expense"] = 0.0
     df.loc[cft == "expense", "expense"] = amt[cft == "expense"]
 
+    # savings is SIGNED, because unlike income and expense it runs both ways and
+    # the name doesn't say which: positive = the balance grew, negative = it
+    # shrank. Taking the magnitude here (as this used to) made a withdrawal
+    # indistinguishable from a contribution, so a month the household dissaved
+    # rendered as a month it saved (#153).
+    #
+    # These rows sit on the BANK account, so they follow the same convention as
+    # every other intent (_INTENT_SIGN in src/db/queries/transactions.py):
+    # positive charged_amount = money leaving that account. Money leaving
+    # checking is money arriving in savings, so the sign passes straight
+    # through with no negation.
     df["savings"] = 0.0
-    df.loc[cft == "savings", "savings"] = amt[cft == "savings"]
+    df.loc[cft == "savings", "savings"] = df.loc[cft == "savings", "charged_amount"]
 
+    # Still a magnitude: an internal transfer moves money between the
+    # household's own accounts, so "how much was moved" is the whole quantity —
+    # there is no net direction to preserve. Deliberately unchanged by #153.
     df["money_transferred"] = 0.0
     df.loc[cft == "internal_transfer", "money_transferred"] = amt[cft == "internal_transfer"]
 

@@ -244,6 +244,89 @@ class TestPrepareSankeyData:
         assert depths["Supermarket — Supermarket"] == 2
         assert depths["Supermarket — Water"] == 2
 
+
+def _cash_flow_with_savings(total: float) -> pd.DataFrame:
+    """One 2024 row whose savings column is exactly `total`."""
+    return pd.DataFrame(
+        {
+            "year": [2024],
+            "month": [1],
+            "person": ["Alice"],
+            "account": ["A1"],
+            "income": [10000.0],
+            "expense": [6000.0],
+            "money_transferred": [0.0],
+            "savings": [total],
+        }
+    )
+
+
+class TestSankeySavingsDirection:
+    """#153: a withdrawal and a contribution are opposite events and must not
+    collapse into the same picture."""
+
+    def test_a_contribution_flows_income_to_savings(self):
+        result = prepare_sankey_data(
+            _make_transactions_df(), _cash_flow_with_savings(2000.0), 2024
+        )
+        savings = [lnk for lnk in result["links"] if "Savings" in (lnk["source"], lnk["target"])]
+        assert savings == [{"source": "Income", "target": "Savings", "value": 2000}]
+
+    def test_a_withdrawal_flows_savings_to_income(self):
+        """Money drawn out of savings is a SOURCE of funds, so it feeds Income
+        rather than draining it."""
+        result = prepare_sankey_data(
+            _make_transactions_df(), _cash_flow_with_savings(-2000.0), 2024
+        )
+        savings = [lnk for lnk in result["links"] if "Savings" in (lnk["source"], lnk["target"])]
+        assert savings == [{"source": "Savings", "target": "Income", "value": 2000}]
+
+    def test_a_withdrawal_is_not_drawn_as_a_contribution(self):
+        """The exact regression: both directions used to render identically."""
+        contribution = prepare_sankey_data(
+            _make_transactions_df(), _cash_flow_with_savings(2000.0), 2024
+        )
+        withdrawal = prepare_sankey_data(
+            _make_transactions_df(), _cash_flow_with_savings(-2000.0), 2024
+        )
+        assert contribution["links"] != withdrawal["links"]
+
+    def test_a_withdrawal_puts_savings_in_front_of_income(self):
+        """Depths must stay monotonic along the flow, or ECharts cannot lay the
+        diagram out: Savings(0) → Income(1) → categories(2) → subcategories(3)."""
+        result = prepare_sankey_data(
+            _make_transactions_df(),
+            _cash_flow_with_savings(-2000.0),
+            2024,
+            expanded_categories={"Supermarket"},
+        )
+        depths = {n["name"]: n["depth"] for n in result["nodes"]}
+        assert depths["Savings"] == 0
+        assert depths["Income"] == 1
+        assert depths["Supermarket"] == 2
+        assert depths["Supermarket — Water"] == 3
+
+    def test_every_link_moves_strictly_forward_in_depth(self):
+        for total in (2000.0, -2000.0):
+            result = prepare_sankey_data(
+                _make_transactions_df(),
+                _cash_flow_with_savings(total),
+                2024,
+                expanded_categories={"Supermarket"},
+            )
+            depths = {n["name"]: n["depth"] for n in result["nodes"]}
+            for lnk in result["links"]:
+                assert depths[lnk["source"]] < depths[lnk["target"]], (
+                    f"{lnk} runs backwards with savings={total}"
+                )
+
+    def test_net_zero_savings_draws_no_savings_node(self):
+        result = prepare_sankey_data(
+            _make_transactions_df(), _cash_flow_with_savings(0.0), 2024
+        )
+        assert "Savings" not in _node_names(result)
+        assert {n["name"]: n["depth"] for n in result["nodes"]}["Income"] == 0
+
     def test_subcategories_follow_parent_in_node_order(self):
         """Subcategory nodes should appear right after their parent."""
         txn = _make_transactions_df()
