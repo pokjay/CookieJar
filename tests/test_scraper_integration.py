@@ -110,11 +110,7 @@ def test_second_insert_run_while_one_running_raises_domain_error(scraper_db):
         insert_run(lookback_days=7)
 
 
-def test_upsert_transactions_dedupes_on_conflict(scraper_db):
-    """Re-syncing an overlapping window must not duplicate rows, and the
-    returned count must reflect only genuinely new inserts."""
-    from src.db.mutations.scraper import upsert_transactions
-
+def _txn_row(**overrides):
     row = {
         "unique_id": "2026-06-01_isracard_1234_10_abc",
         "company_id": "isracard",
@@ -130,13 +126,35 @@ def test_upsert_transactions_dedupes_on_conflict(scraper_db):
         "identifier": "abc",
         "installments": None,
         "raw": '{"description": "STARBUCKS"}',
+        "bank_category": None,
     }
+    row.update(overrides)
+    return row
 
-    first = upsert_transactions([row])
-    assert first == 1
 
-    second = upsert_transactions([row])
-    assert second == 0
+def _stored(engine, unique_id):
+    with engine.connect() as fresh_conn:
+        return fresh_conn.execute(
+            sa.text(
+                "SELECT raw, memo, bank_category, updated_at "
+                "FROM transactions WHERE unique_id = :uid"
+            ),
+            {"uid": unique_id},
+        ).one()
+
+
+def test_upsert_transactions_dedupes_on_conflict(scraper_db):
+    """Re-syncing an overlapping window must not duplicate rows, and the
+    returned counts must tell a genuinely new insert from a re-scrape."""
+    from src.db.mutations.scraper import upsert_transactions
+
+    row = _txn_row()
+
+    assert upsert_transactions([row]) == (1, 0)
+    # Identical re-scrape: the DO UPDATE's WHERE guard rejects it, so it is
+    # neither an insert nor an update — updated_at must not churn and the
+    # 5-minute cache must not be dirtied for nothing.
+    assert upsert_transactions([row]) == (0, 0)
 
     with scraper_db.connect() as fresh_conn:
         count = fresh_conn.execute(
@@ -144,3 +162,120 @@ def test_upsert_transactions_dedupes_on_conflict(scraper_db):
             {"uid": row["unique_id"]},
         ).scalar_one()
     assert count == 1
+
+
+def test_upsert_backfills_a_category_onto_a_row_already_stored(scraper_db):
+    """#135/#149: enrichment is budgeted and converges over several syncs, so a
+    row inserted unenriched has to be able to pick up its category later. Under
+    the old DO NOTHING it never could."""
+    from src.db.mutations.scraper import upsert_transactions
+
+    upsert_transactions([_txn_row()])
+    assert _stored(scraper_db, "2026-06-01_isracard_1234_10_abc").bank_category is None
+
+    inserted, updated = upsert_transactions(
+        [
+            _txn_row(
+                bank_category="פארמה",
+                raw='{"description": "STARBUCKS", "category": "פארמה"}',
+            )
+        ]
+    )
+    assert (inserted, updated) == (0, 1)
+
+    stored = _stored(scraper_db, "2026-06-01_isracard_1234_10_abc")
+    assert stored.bank_category == "פארמה"
+    assert "category" in stored.raw
+
+
+def test_an_unenriched_rescrape_never_erases_an_existing_category(scraper_db):
+    """The trap this upsert is shaped around: a sync with enrichment off, or one
+    whose budget ran out, yields transactions with no category. If that erased
+    what an earlier, more expensive run collected, enrichment could never
+    converge — every run would undo the last."""
+    from src.db.mutations.scraper import upsert_transactions
+
+    enriched_raw = '{"description": "STARBUCKS", "category": "פארמה"}'
+    upsert_transactions([_txn_row(bank_category="פארמה", raw=enriched_raw)])
+    before = _stored(scraper_db, "2026-06-01_isracard_1234_10_abc")
+
+    # Exactly what the sidecar returns when enrichment was skipped: same
+    # transaction, no category, and a `raw` that is missing the enrichment.
+    inserted, updated = upsert_transactions([_txn_row()])
+
+    after = _stored(scraper_db, "2026-06-01_isracard_1234_10_abc")
+    assert after.bank_category == "פארמה", "the category was clobbered"
+    assert "category" in after.raw, "raw was rolled back to the unenriched copy"
+    assert (inserted, updated) == (0, 0), "a strictly poorer copy is not an update"
+    assert after.updated_at == before.updated_at
+
+
+def test_upsert_refreshes_memo_and_raw_on_a_row_that_was_never_enriched(scraper_db):
+    """Guarding against the clobber above must not block the ordinary #135
+    refresh for providers that have no category at all."""
+    from src.db.mutations.scraper import upsert_transactions
+
+    upsert_transactions([_txn_row(company_id="max", memo=None)])
+    inserted, updated = upsert_transactions(
+        [_txn_row(company_id="max", memo="תשלום 1 מתוך 3", raw='{"moreInfo": "x"}')]
+    )
+
+    assert (inserted, updated) == (0, 1)
+    stored = _stored(scraper_db, "2026-06-01_isracard_1234_10_abc")
+    assert stored.memo == "תשלום 1 מתוך 3"
+    assert "moreInfo" in stored.raw
+
+
+def test_enriched_identifiers_and_pending_count_drive_the_skip_set(scraper_db):
+    """What the next sync sends the sidecar, and what the UI shows as remaining.
+    Both are windowed and per-company, so neither can leak across providers."""
+    from src.db.mutations.scraper import upsert_transactions
+    from src.db.queries.scraper import enriched_identifiers, pending_enrichment_count
+
+    upsert_transactions(
+        [
+            _txn_row(unique_id="u1", identifier="abc", bank_category="פארמה"),
+            _txn_row(unique_id="u2", identifier="def", bank_category=None),
+            # Same window, different provider — must not appear in isracard's set.
+            _txn_row(unique_id="u3", identifier="ghi", company_id="amex", bank_category="דלק"),
+            # Enriched, but older than the window the next sync will ask about.
+            _txn_row(
+                unique_id="u4",
+                identifier="jkl",
+                activity_date="2026-01-01",
+                bank_category="מזון",
+            ),
+        ]
+    )
+
+    assert enriched_identifiers("isracard", "2026-05-01") == ["abc"]
+    assert enriched_identifiers("amex", "2026-05-01") == ["ghi"]
+    # "def" is the only isracard row in the window still missing a category.
+    assert pending_enrichment_count("isracard", "2026-05-01") == 1
+    assert pending_enrichment_count("amex", "2026-05-01") == 0
+
+
+def test_get_last_run_carries_the_enrichment_counters(scraper_db):
+    """A successful run can still be short of categories; the run row is where
+    the UI learns that."""
+    from src.db.mutations.scraper import (
+        finish_run,
+        finish_run_account,
+        insert_run,
+        insert_run_account,
+    )
+    from src.db.queries.scraper import get_last_run
+
+    run_id = insert_run(lookback_days=30)
+    insert_run_account(run_id, account="1234", company_id="isracard")
+    insert_run_account(run_id, account="5678", company_id="max")
+    finish_run_account(run_id, "1234", "isracard", "success", None, 5, None, 60, 180)
+    # max has no enrichment pass at all — that is not a backlog of zero.
+    finish_run_account(run_id, "5678", "max", "success", None, 3)
+    finish_run(run_id, "success")
+
+    accounts = {a["company_id"]: a for a in get_last_run()["accounts"]}
+    assert accounts["isracard"]["enrichment_added"] == 60
+    assert accounts["isracard"]["enrichment_missing"] == 180
+    assert accounts["max"]["enrichment_added"] is None
+    assert accounts["max"]["enrichment_missing"] is None

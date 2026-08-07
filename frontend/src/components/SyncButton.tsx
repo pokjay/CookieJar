@@ -76,10 +76,11 @@ function SyncModal({
     });
   }
 
-  // Default off: the extra-details fetch runs once per transaction per month
-  // per card, which is what gets Isracard/Amex to answer 429 and fail the whole
-  // sync. Opt in only when the provider's own category data is actually wanted.
-  const [extraDetails, setExtraDetails] = useState(false);
+  // Default on, matching the backend's SyncPayload default. It used to be off
+  // because a 429 during the extra-details fetch discarded the whole sync; the
+  // scraper now paces that fetch, caps it with a time budget and absorbs the
+  // 429, so leaving it on costs a slower sync — never the transactions.
+  const [extraDetails, setExtraDetails] = useState(true);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -190,9 +191,10 @@ function SyncModal({
             <span>
               <span className="block text-sm text-cj-text">Fetch extra transaction details</span>
               <span className="block text-xs text-cj-text-faint mt-0.5">
-                Adds the provider&apos;s own category to each transaction. Makes one extra request
-                per transaction, per month, per card — Isracard and Amex may rate-limit (429) and
-                fail the whole sync.
+                Adds the provider&apos;s own category to each transaction. Slow — one extra request
+                per transaction, spaced out to stay under Isracard and Amex&apos;s rate limit — so
+                it stops when it runs out of time and picks up where it left off next sync.
+                Transactions are never at risk either way.
               </span>
             </span>
           </label>
@@ -279,8 +281,23 @@ function RunStatus({ status }: { status: ScraperStatus }) {
               {acct.error_message}
             </p>
           )}
+          {/* A successful account can still be short of categories: the pass is
+              budgeted and stops when the budget runs out. Without this the run
+              reads as "done" while a backlog quietly persists. Null means the
+              provider has no such pass at all, which is not a backlog of zero. */}
+          {acct.enrichment_missing != null && (
+            <p className="text-xs text-cj-text-muted leading-snug pl-1">
+              categories {acct.enrichment_added ?? 0} added
+              {acct.enrichment_missing > 0 && ` · ${acct.enrichment_missing} missing`}
+            </p>
+          )}
         </div>
       ))}
+      {run.accounts.some((a) => (a.enrichment_missing ?? 0) > 0) && (
+        <p className="text-xs text-cj-text-muted leading-snug pt-1 border-t border-cj-border">
+          Re-run with the same lookback to continue adding categories.
+        </p>
+      )}
     </div>
   );
 }

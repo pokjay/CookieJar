@@ -486,7 +486,12 @@ describe("POST /scrape failure paths", () => {
       const { body } = await postScrape(base, VALID_BODY);
       assert.equal(body.errorType, "generic-error");
       assert.match(body.errorMessage, /rate-limited/i);
-      assert.match(body.errorMessage, /extra transaction details/i);
+      // The advice deliberately does NOT tell the user to turn extra details
+      // off any more: the governor absorbs a 429 on the enrichment pass, so one
+      // that still surfaces as a scrape failure hit the login or the
+      // transaction fetch, where that switch changes nothing.
+      assert.match(body.errorMessage, /login or the transaction fetch/i);
+      assert.doesNotMatch(body.errorMessage, /turn(ed)? off|shorter lookback/i);
       const serialized = JSON.stringify(body);
       assert.ok(!serialized.includes("shovarRatz"));
       assert.ok(!serialized.includes("651687167"));
@@ -505,6 +510,31 @@ describe("POST /scrape failure paths", () => {
       await postScrape(base, { ...VALID_BODY, additionalTransactionInformation: true });
     });
     assert.deepEqual(seen, [false, true]);
+  });
+
+  test("a successful scrape reports what the enrichment pass did", async () => {
+    // The stub never issues a fetch, so the counts are all zero — what matters
+    // here is that the block is on the wire at all, since run_sync reads it to
+    // decide whether enrichment applied to this provider.
+    const factory = stubFactory({ result: { success: true, accounts: [] } });
+    await withServer({ scraperFactory: factory }, async (base) => {
+      const { body } = await postScrape(base, {
+        ...VALID_BODY,
+        additionalTransactionInformation: true,
+        enrichedIdentifiers: ["651687167"],
+        enrichmentBudgetSeconds: 120,
+      });
+      assert.deepEqual(body.enrichment, {
+        requested: 0,
+        skipped: 0,
+        enriched: 0,
+        deferred: 0,
+        stopped: null,
+        spentMs: 0,
+      });
+      // The caller's identifiers are a skip set, not something to echo back.
+      assert.ok(!JSON.stringify(body).includes("651687167"));
+    });
   });
 
   test("scrape() throwing classifies via classifyError and leaks nothing", async () => {

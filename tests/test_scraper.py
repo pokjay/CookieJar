@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 
 os.environ.setdefault("USE_MOCK_DATA", "true")
 
+from backend import scraper_sync  # noqa: E402
 from backend.routers import scraper as scraper_router  # noqa: E402
 from backend.scraper_sync import (  # noqa: E402
     _build_transaction_row,
@@ -114,6 +115,32 @@ def test_build_transaction_row_unparseable_date_returns_none():
     assert _build_transaction_row(tx, "isracard", "1234") is None
 
 
+# ── bank_category — the enrichment pass's only product, promoted out of `raw`
+#    so it is queryable and so the next sync knows what it already paid for. ──
+
+
+def test_build_transaction_row_promotes_the_bank_category():
+    tx = {
+        "date": "2026-06-01T00:00:00.000Z",
+        "chargedAmount": 1,
+        "identifier": "x",
+        # The library trims PirteyIska_204Bean.sector, but not always cleanly.
+        "category": "  פארמה  ",
+    }
+    assert _build_transaction_row(tx, "isracard", "1234")["bank_category"] == "פארמה"
+
+
+@pytest.mark.parametrize("category", [None, "", "   "], ids=["absent", "empty", "blank"])
+def test_build_transaction_row_category_absent_is_null_not_empty(category):
+    """NULL means "we don't know yet", which is what lets the upsert refuse to
+    overwrite a category an earlier run collected. An empty string would read as
+    "this transaction has no category" and clobber it."""
+    tx = {"date": "2026-06-01T00:00:00.000Z", "chargedAmount": 1, "identifier": "x"}
+    if category is not None:
+        tx["category"] = category
+    assert _build_transaction_row(tx, "isracard", "1234")["bank_category"] is None
+
+
 # ── src/db/mutations/scraper.py — every function must guard is_mock_mode()
 #    itself and never touch the DB in mock mode. ─────────────────────────────
 
@@ -126,9 +153,9 @@ def test_insert_run_mock_mode_never_hits_db():
 
 
 def test_upsert_transactions_mock_mode_never_hits_db():
-    with patch("src.db.mutations.scraper.execute_mutations_batch") as batch:
-        count = scraper_mutations.upsert_transactions([{"unique_id": "x"}])
-    assert count == 0
+    with patch("src.db.mutations.scraper.execute_upserts_batch") as batch:
+        counts = scraper_mutations.upsert_transactions([{"unique_id": "x"}])
+    assert counts == (0, 0)
     batch.assert_not_called()
 
 
@@ -212,6 +239,8 @@ def _run_sync_mocks(scrape_result, upsert_side_effect=None) -> ExitStack:
     stack.enter_context(
         patch("backend.scraper_sync.upsert_transactions", side_effect=upsert_side_effect)
     )
+    stack.enter_context(patch("backend.scraper_sync.enriched_identifiers", return_value=[]))
+    stack.enter_context(patch("backend.scraper_sync.pending_enrichment_count", return_value=0))
     return stack
 
 
@@ -283,7 +312,7 @@ def test_run_sync_falls_back_to_account_title_when_no_account_number_anywhere():
 
 
 @contextmanager
-def _run_sync_harness(scrape=None, upsert=None):
+def _run_sync_harness(scrape=None, upsert=None, enriched=None, pending=0):
     """Like _run_sync_mocks, but takes side_effects (so successive accounts can
     get different results) and yields the mocks so tests can assert on
     finish_run / finish_run_account calls."""
@@ -295,6 +324,12 @@ def _run_sync_harness(scrape=None, upsert=None):
         patch("backend.scraper_sync.clear_all") as clear_all,
         patch("backend.scraper_sync._scrape_account", side_effect=scrape) as scrape_mock,
         patch("backend.scraper_sync.upsert_transactions", side_effect=upsert) as upsert_mock,
+        patch(
+            "backend.scraper_sync.enriched_identifiers", return_value=enriched or []
+        ) as enriched_mock,
+        patch(
+            "backend.scraper_sync.pending_enrichment_count", return_value=pending
+        ) as pending_mock,
     ):
         yield SimpleNamespace(
             finish_run_account=finish_run_account,
@@ -302,6 +337,8 @@ def _run_sync_harness(scrape=None, upsert=None):
             clear_all=clear_all,
             upsert=upsert_mock,
             scrape_account=scrape_mock,
+            enriched_identifiers=enriched_mock,
+            pending_enrichment_count=pending_mock,
         )
 
 
@@ -313,7 +350,7 @@ _TWO_ACCOUNTS = [
 
 
 def test_run_sync_all_success_finishes_run_success_and_clears_cache_once():
-    with _run_sync_harness(scrape=[_OK, _OK], upsert=lambda rows: len(rows)) as mocks:
+    with _run_sync_harness(scrape=[_OK, _OK], upsert=lambda rows: (len(rows), 0)) as mocks:
         run_sync(_TWO_ACCOUNTS, "run-1", 30)
     mocks.finish_run.assert_called_once_with("run-1", "success")
     mocks.clear_all.assert_called_once()
@@ -321,7 +358,7 @@ def test_run_sync_all_success_finishes_run_success_and_clears_cache_once():
 
 def test_run_sync_mixed_results_finish_run_partial():
     failed = {"errorType": "wrong-credentials", "transactions": []}
-    with _run_sync_harness(scrape=[_OK, failed], upsert=lambda rows: len(rows)) as mocks:
+    with _run_sync_harness(scrape=[_OK, failed], upsert=lambda rows: (len(rows), 0)) as mocks:
         run_sync(_TWO_ACCOUNTS, "run-1", 30)
     mocks.finish_run.assert_called_once_with("run-1", "partial")
     mocks.finish_run_account.assert_any_call(
@@ -375,14 +412,15 @@ def test_run_sync_sidecar_error_message_reaches_the_account_row():
 
 
 def test_run_sync_forwards_the_extra_details_opt_in_and_defaults_it_off():
-    """additionalTransactionInformation is what trips isracard/amex's 429, so it
-    must reach the sidecar only when the caller actually asked for it."""
-    with _run_sync_harness(scrape=[_OK, _OK], upsert=lambda rows: len(rows)) as mocks:
+    """additionalTransactionInformation used to default off because a 429 during
+    that pass discarded the whole scrape. The governor absorbs that now and the
+    pass is budgeted, so it defaults ON — but the caller can still turn it off."""
+    with _run_sync_harness(scrape=[_OK, _OK], upsert=lambda rows: (len(rows), 0)) as mocks:
         run_sync([{"companyId": "isracard", "accountTitle": "A"}], "run-1", 30)
-        run_sync([{"companyId": "isracard", "accountTitle": "A"}], "run-2", 30, True)
+        run_sync([{"companyId": "isracard", "accountTitle": "A"}], "run-2", 30, False)
 
     sent = [call.args[2] for call in mocks.scrape_account.call_args_list]
-    assert sent == [False, True]
+    assert sent == [True, False]
 
 
 def test_scrape_account_sends_the_extra_details_flag_to_the_sidecar():
@@ -408,9 +446,14 @@ def test_scrape_account_sends_the_extra_details_flag_to_the_sidecar():
             return _Resp()
 
     with patch("backend.scraper_sync.httpx.Client", return_value=_Client()):
-        _scrape_account({"companyId": "isracard"}, "2026-07-01", True)
+        _scrape_account({"companyId": "isracard"}, "2026-07-01", True, ["abc", "def"], 120.0)
 
     assert captured["additionalTransactionInformation"] is True
+    # The sidecar has no database, so the skip set and the budget can only come
+    # from here — without them it re-enriches the whole window every sync.
+    assert captured["enrichedIdentifiers"] == ["abc", "def"]
+    assert captured["enrichmentBudgetSeconds"] == 120.0
+    assert captured["enrichmentDelayMs"] > 0
 
 
 def test_run_sync_connect_error_marks_account_unavailable():
@@ -442,18 +485,102 @@ def test_run_sync_upsert_failure_marks_db_error_and_continues_to_next_account():
         if not upsert_side_effect.calls:
             upsert_side_effect.calls.append(1)
             raise RuntimeError("insert failed")
-        return len(rows)
+        return (len(rows), 0)
 
     upsert_side_effect.calls = []
 
     with _run_sync_harness(scrape=[_OK, _OK], upsert=upsert_side_effect) as mocks:
         run_sync(_TWO_ACCOUNTS, "run-1", 30)
 
+    mocks.finish_run_account.assert_any_call("run-1", "A", "isracard", "error", "db_error", 0, ANY)
+    # visaCal has no enrichment pass, so both enrichment counters stay None —
+    # "does not apply", which the UI renders as no counter at all rather than as
+    # a backlog of zero.
     mocks.finish_run_account.assert_any_call(
-        "run-1", "A", "isracard", "error", "db_error", 0, ANY
+        "run-1", "B", "visaCal", "success", None, 0, None, None, None
     )
-    mocks.finish_run_account.assert_any_call("run-1", "B", "visaCal", "success", None, 0)
     mocks.finish_run.assert_called_once_with("run-1", "partial")
+
+
+# ── the enrichment budget — shared across a run, not granted per account ─────
+
+
+_ENRICHING_TWO = [
+    {"companyId": "isracard", "accountTitle": "A"},
+    {"companyId": "amex", "accountTitle": "B"},
+]
+
+
+def _budgets(mocks):
+    """The enrichmentBudgetSeconds each account was handed."""
+    return [call.args[4] for call in mocks.scrape_account.call_args_list]
+
+
+def test_run_sync_splits_the_budget_between_accounts_that_need_it():
+    """Handing the whole budget to the first account would let it converge while
+    the last one never starts — and the UI would show a backlog that never
+    moves."""
+    ok = {**_OK, "enrichment": {"enriched": 0, "spentMs": 0}}
+    with _run_sync_harness(scrape=[ok, ok], upsert=lambda rows: (len(rows), 0)) as mocks:
+        run_sync(_ENRICHING_TWO, "run-1", 30)
+
+    first, second = _budgets(mocks)
+    assert first == pytest.approx(scraper_sync._ENRICHMENT_BUDGET_SECONDS / 2)
+    # The first account spent nothing, so its share returns to the pool rather
+    # than being lost.
+    assert second == pytest.approx(scraper_sync._ENRICHMENT_BUDGET_SECONDS)
+
+
+def test_run_sync_charges_the_budget_for_what_an_account_actually_spent():
+    spent = {**_OK, "enrichment": {"enriched": 12, "spentMs": 60_000}}
+    ok = {**_OK, "enrichment": {"enriched": 0, "spentMs": 0}}
+    with _run_sync_harness(scrape=[spent, ok], upsert=lambda rows: (len(rows), 0)) as mocks:
+        run_sync(_ENRICHING_TWO, "run-1", 30)
+
+    _, second = _budgets(mocks)
+    assert second == pytest.approx(scraper_sync._ENRICHMENT_BUDGET_SECONDS - 60)
+
+
+def test_run_sync_gives_no_budget_to_providers_without_an_enrichment_pass():
+    """visaCal supplies its category with the transaction and max has none, so
+    neither spends enrichment time — and neither may take a slice that an
+    isracard account needs."""
+    accounts = [
+        {"companyId": "visaCal", "accountTitle": "C"},
+        {"companyId": "isracard", "accountTitle": "A"},
+    ]
+    ok = {**_OK, "enrichment": {"enriched": 0, "spentMs": 0}}
+    with _run_sync_harness(scrape=[ok, ok], upsert=lambda rows: (len(rows), 0)) as mocks:
+        run_sync(accounts, "run-1", 30)
+
+    cal_budget, isracard_budget = _budgets(mocks)
+    assert cal_budget is None
+    assert isracard_budget == pytest.approx(scraper_sync._ENRICHMENT_BUDGET_SECONDS)
+    mocks.enriched_identifiers.assert_called_once_with("isracard", ANY)
+
+
+def test_run_sync_asks_for_no_enrichment_when_the_caller_opted_out():
+    ok = {**_OK, "enrichment": {"enriched": 0, "spentMs": 0}}
+    with _run_sync_harness(scrape=[ok], upsert=lambda rows: (len(rows), 0)) as mocks:
+        run_sync([{"companyId": "isracard", "accountTitle": "A"}], "run-1", 30, False)
+
+    assert _budgets(mocks) == [None]
+    mocks.enriched_identifiers.assert_not_called()
+    mocks.finish_run_account.assert_called_once_with(
+        "run-1", "A", "isracard", "success", None, 0, None, None, None
+    )
+
+
+def test_run_sync_reports_the_backlog_from_the_database_not_the_sidecar():
+    """The sidecar sees one scrape; the backlog is a property of the window,
+    including rows stored by earlier runs that still have no category."""
+    ok = {**_OK, "enrichment": {"enriched": 60, "spentMs": 1000}}
+    with _run_sync_harness(scrape=[ok], upsert=lambda rows: (len(rows), 0), pending=180) as mocks:
+        run_sync([{"companyId": "isracard", "accountTitle": "A"}], "run-1", 30)
+
+    mocks.finish_run_account.assert_called_once_with(
+        "run-1", "A", "isracard", "success", None, 0, None, 60, 180
+    )
 
 
 def test_run_sync_finishes_run_as_error_on_unexpected_exception():

@@ -370,6 +370,19 @@ export interface ScraperRunAccount {
   error_type: string | null;
   error_message: string | null;
   transactions_imported: number;
+  /**
+   * The bank-category pass runs on a budget and routinely stops before it has
+   * covered everything, so a successful run does not mean every transaction got
+   * a category. `added` is what this run collected; `missing` is what is still
+   * uncategorised in the window that was scraped — re-running the same lookback
+   * is what advances it.
+   *
+   * Both null means enrichment does not apply to this account at all (the
+   * provider has no such pass, or the caller turned it off) — which is not the
+   * same statement as zero, and renders as no counter rather than as "0 left".
+   */
+  enrichment_added: number | null;
+  enrichment_missing: number | null;
 }
 
 export interface ScraperRun {
