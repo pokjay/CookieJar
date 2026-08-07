@@ -132,7 +132,13 @@ def dashboard_avg_by_category(year: int = Query(...)):
 
 @router.get("/dashboard/subscriptions")
 def dashboard_subscriptions(year: int = Query(...), month: int | None = Query(None, ge=1, le=12)):
-    """Recurring charges in the 12 months ending at `month` (December when omitted)."""
+    """Recurring charges in the 12 months ending at `month` (December when omitted).
+
+    Not decorated with @ttl_cached, like every other handler in this router:
+    ttl_cached wraps zero-argument functions, so it cannot key on `year`/`month`
+    and would serve one window's answer for all of them. The expensive part —
+    the database read — is already cached, at `_txn`.
+    """
     return compute_subscriptions(_txn(), year, month)
 
 

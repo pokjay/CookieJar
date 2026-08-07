@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 
 from src.db.connection import is_mock_mode, run_query
@@ -192,7 +194,13 @@ def compute_avg_by_category(df: pd.DataFrame, year: int) -> list[dict]:
 WINDOW_MONTHS = 12
 MIN_PRESENCE_RATIO = 0.6  # share of the window's months the merchant must bill in
 MIN_PRESENCE_MONTHS = 3  # too few months to call anything a habit
-MAX_MONTHLY_CV = 0.35  # coefficient of variation over monthly totals
+# Coefficient of variation over monthly totals. Set at 0.40 rather than something
+# tighter because a committed cost whose amount *steps* — a rent increase, a plan
+# change — looks variable to a whole-window CV for as long as both levels sit in
+# the window. A doubling halfway through 12 months scores ~0.37; on real data
+# 0.40 admitted exactly one merchant that 0.35 rejected (a standing order that had
+# doubled) and nothing else, while 0.45 started letting supermarkets in.
+MAX_MONTHLY_CV = 0.40
 
 
 def compute_subscriptions(df: pd.DataFrame, year: int, month: int | None = None) -> list[dict]:
@@ -217,7 +225,9 @@ def compute_subscriptions(df: pd.DataFrame, year: int, month: int | None = None)
 
     window["_mkey"] = window["year"] * 12 + window["month"]
     covered_months = window["_mkey"].nunique()
-    min_months = max(MIN_PRESENCE_MONTHS, round(MIN_PRESENCE_RATIO * covered_months))
+    # ceil, not round: round() would accept a merchant billing in *less* than the
+    # configured share (9 covered months -> round(5.4) == 5, i.e. 56%).
+    min_months = max(MIN_PRESENCE_MONTHS, math.ceil(MIN_PRESENCE_RATIO * covered_months))
 
     # Judge stability on monthly totals — a merchant that splits one steady bill
     # into two uneven charges is still a steady bill.

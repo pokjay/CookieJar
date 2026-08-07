@@ -244,6 +244,38 @@ class TestComputeSubscriptions:
         df = pd.DataFrame(self._monthly_bill("Gym", (2025, 1), 12))
         assert compute_subscriptions(df, 2025) == compute_subscriptions(df, 2025, month=12)
 
+    def test_survives_a_step_change_in_amount(self):
+        """A rent increase is still rent: the amount steps once, then holds.
+
+        Five months at one level and four at double scores a CV of ~0.36 over the
+        window — above the 0.35 this rule originally used, which dropped a real
+        standing order out of the committed set for five months running.
+        """
+        amounts = [3750.0] * 5 + [7500.0] * 4
+        df = pd.DataFrame(self._monthly_bill("Rent", (2025, 12), 9, amounts))
+        result = compute_subscriptions(df, 2026, month=8)
+        assert [r["name"] for r in result] == ["Rent"]
+
+    def test_presence_threshold_rounds_up(self):
+        """round() would accept 5 of 9 months — 56%, under the configured 60%."""
+        # Nine covered months: a filler merchant every month sets the window,
+        # the candidate bills in five of them.
+        rows = self._monthly_bill("Filler", (2025, 12), 9)
+        for i in (0, 1, 2, 3, 4):
+            rows += self._monthly_bill("Candidate", (2025, 12 + i), 1)
+        result = compute_subscriptions(pd.DataFrame(rows), 2026, month=8)
+        names = [r["name"] for r in result]
+        assert "Filler" in names
+        assert "Candidate" not in names
+
+    def test_presence_threshold_accepts_the_exact_ratio(self):
+        """Six of nine is 67% — comfortably over, and must still qualify."""
+        rows = self._monthly_bill("Filler", (2025, 12), 9)
+        for i in range(6):
+            rows += self._monthly_bill("Candidate", (2025, 12 + i), 1)
+        names = [r["name"] for r in compute_subscriptions(pd.DataFrame(rows), 2026, month=8)]
+        assert "Candidate" in names
+
     def test_ignores_merchant_that_stopped_billing(self):
         """Cancelled six months ago: present in half the window, below the 60% threshold."""
         df = pd.DataFrame(
