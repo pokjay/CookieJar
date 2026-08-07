@@ -227,6 +227,20 @@ function SyncModal({
 
 // ── RunStatus ─────────────────────────────────────────────────────────────────
 
+// How the bank-category pass went, in words rather than two raw numbers.
+//
+// The counts alone mislead at the ends of the range: a converged account reports
+// 0 added and 0 missing, and "categories 0 added" reads as a failure when it
+// actually means every transaction in the window already has one. A budget that
+// never got started reports 0 added with a real backlog, where the added count
+// is just noise. So each of the four states gets its own sentence.
+export function categorySummary(added: number, missing: number): string {
+  const categories = (n: number) => `${n} ${n === 1 ? "category" : "categories"}`;
+  if (missing === 0) return added > 0 ? `${categories(added)} added` : "categories up to date";
+  if (added === 0) return `${categories(missing)} missing`;
+  return `${categories(added)} added · ${missing} missing`;
+}
+
 function RunStatus({ status }: { status: ScraperStatus }) {
   const run = status.last_run;
   if (!run) return null;
@@ -287,8 +301,7 @@ function RunStatus({ status }: { status: ScraperStatus }) {
               provider has no such pass at all, which is not a backlog of zero. */}
           {acct.enrichment_missing != null && (
             <p className="text-xs text-cj-text-muted leading-snug pl-1">
-              categories {acct.enrichment_added ?? 0} added
-              {acct.enrichment_missing > 0 && ` · ${acct.enrichment_missing} missing`}
+              {categorySummary(acct.enrichment_added ?? 0, acct.enrichment_missing)}
             </p>
           )}
         </div>

@@ -115,23 +115,30 @@ def enriched_identifiers(company_id: str, start_date: str) -> list[str]:
     return [str(v).strip() for v in df["identifier"].tolist()]
 
 
-def pending_enrichment_count(company_id: str, start_date: str) -> int:
-    """How many transactions in this window still have no bank category.
+def pending_enrichment_count(unique_ids: list[str]) -> int:
+    """How many of the transactions THIS SCRAPE returned still have no category.
 
-    Read after the upsert to tell the user how much of the enrichment backlog is
-    left, since a budgeted pass routinely stops before finishing. Re-running the
-    sync over the same window is what advances it.
+    Scoped to the scrape's own output rather than to the lookback window, because
+    the two do not agree at the edges and the difference is not cosmetic: a
+    window-scoped count includes rows stored by an older sync that the provider
+    has since stopped returning, and nothing can ever enrich those. Observed
+    live - four amex rows dated 2026-06-28 sat exactly on a 40-day boundary
+    whose scrape started at 2026-06-29, so every re-run reported "4 missing",
+    asked about none of them, and the number never moved.
+
+    Counting only what the scrape actually returned makes the figure mean what
+    the UI claims it means: how much a re-run over the same window could still
+    fix. Rows the provider has dropped fall out on their own.
     """
-    if is_mock_mode():
+    if is_mock_mode() or not unique_ids:
         return 0
     df = run_query(
         """
         SELECT count(*) AS pending
         FROM transactions
-        WHERE company_id = :company_id
-          AND activity_date >= :start_date ::date
+        WHERE unique_id = ANY(:unique_ids)
           AND bank_category IS NULL
         """,
-        {"company_id": company_id, "start_date": start_date},
+        {"unique_ids": list(unique_ids)},
     )
     return int(df["pending"].iloc[0]) if not df.empty else 0

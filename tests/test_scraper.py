@@ -130,15 +130,27 @@ def test_build_transaction_row_promotes_the_bank_category():
     assert _build_transaction_row(tx, "isracard", "1234")["bank_category"] == "פארמה"
 
 
-@pytest.mark.parametrize("category", [None, "", "   "], ids=["absent", "empty", "blank"])
-def test_build_transaction_row_category_absent_is_null_not_empty(category):
-    """NULL means "we don't know yet", which is what lets the upsert refuse to
-    overwrite a category an earlier run collected. An empty string would read as
-    "this transaction has no category" and clobber it."""
+def test_build_transaction_row_no_category_key_means_never_asked():
+    """The sidecar only adds a `category` key when its fetch actually returned
+    data, so an absent key means the enrichment pass skipped or deferred this
+    transaction. That must be NULL - "still owed one" - so the upsert keeps
+    whatever an earlier run collected instead of erasing it."""
     tx = {"date": "2026-06-01T00:00:00.000Z", "chargedAmount": 1, "identifier": "x"}
-    if category is not None:
-        tx["category"] = category
     assert _build_transaction_row(tx, "isracard", "1234")["bank_category"] is None
+
+
+@pytest.mark.parametrize("category", ["", "   "], ids=["empty", "blank"])
+def test_build_transaction_row_empty_category_means_the_provider_has_none(category):
+    """A present-but-empty category is an ANSWER: we asked and the provider had
+    nothing. Folding it into NULL would make us re-ask every sync and report it
+    as a backlog that can never reach zero."""
+    tx = {
+        "date": "2026-06-01T00:00:00.000Z",
+        "chargedAmount": 1,
+        "identifier": "x",
+        "category": category,
+    }
+    assert _build_transaction_row(tx, "isracard", "1234")["bank_category"] == ""
 
 
 # ── src/db/mutations/scraper.py — every function must guard is_mock_mode()

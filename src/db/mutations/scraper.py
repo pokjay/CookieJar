@@ -147,6 +147,13 @@ def mark_stale_runs() -> None:
 #   * bank_category only ever moves from NULL to a value, never back;
 #   * raw is replaced only when the incoming copy is at least as enriched as the
 #     stored one - either it carries a category, or the stored row never had.
+#
+# Three-valued, not two: NULL means "never asked", '' means "asked, and the
+# provider has no category for this one" (see _bank_category in
+# backend/scraper_sync.py). Recording that empty answer is what lets the backlog
+# reach zero instead of re-asking the same hopeless question every sync. But ''
+# must never displace a real category, so it wins only on a row that has none -
+# hence NULLIF ... COALESCE ... EXCLUDED rather than a plain COALESCE.
 _UPSERT_TRANSACTION_SQL = """
     INSERT INTO transactions (
         unique_id, company_id, account, status,
@@ -170,11 +177,14 @@ _UPSERT_TRANSACTION_SQL = """
                 ELSE transactions.raw
               END,
         memo = EXCLUDED.memo,
-        bank_category = COALESCE(EXCLUDED.bank_category, transactions.bank_category),
+        bank_category = COALESCE(
+            NULLIF(EXCLUDED.bank_category, ''), transactions.bank_category, EXCLUDED.bank_category
+        ),
         updated_at = now()
     WHERE transactions.memo IS DISTINCT FROM EXCLUDED.memo
-       OR transactions.bank_category IS DISTINCT FROM
-          COALESCE(EXCLUDED.bank_category, transactions.bank_category)
+       OR transactions.bank_category IS DISTINCT FROM COALESCE(
+            NULLIF(EXCLUDED.bank_category, ''), transactions.bank_category, EXCLUDED.bank_category
+          )
        OR (transactions.raw IS DISTINCT FROM EXCLUDED.raw
            AND (EXCLUDED.bank_category IS NOT NULL OR transactions.bank_category IS NULL))
     RETURNING (xmax = 0) AS inserted

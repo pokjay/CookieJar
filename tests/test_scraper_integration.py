@@ -226,6 +226,50 @@ def test_upsert_refreshes_memo_and_raw_on_a_row_that_was_never_enriched(scraper_
     assert "moreInfo" in stored.raw
 
 
+def test_an_empty_category_records_that_the_provider_has_none(scraper_db):
+    """'' means "we asked, there is nothing" - it must stick, so the transaction
+    stops being counted as a backlog and stops being re-requested every sync."""
+    from src.db.mutations.scraper import upsert_transactions
+    from src.db.queries.scraper import pending_enrichment_count
+
+    upsert_transactions([_txn_row(bank_category="")])
+
+    stored = _stored(scraper_db, "2026-06-01_isracard_1234_10_abc")
+    assert stored.bank_category == ""
+    assert pending_enrichment_count(["2026-06-01_isracard_1234_10_abc"]) == 0
+
+
+def test_an_empty_category_never_displaces_a_real_one(scraper_db):
+    """The other half: a transient empty answer must not wipe a category an
+    earlier run collected."""
+    from src.db.mutations.scraper import upsert_transactions
+
+    upsert_transactions([_txn_row(bank_category="פארמה")])
+    inserted, updated = upsert_transactions([_txn_row(bank_category="")])
+
+    assert _stored(scraper_db, "2026-06-01_isracard_1234_10_abc").bank_category == "פארמה"
+    assert (inserted, updated) == (0, 0)
+
+
+def test_pending_count_ignores_rows_this_scrape_did_not_return(scraper_db):
+    """Observed live: four amex rows sat one day outside what the provider still
+    returns, so every re-run reported them missing, asked about none of them,
+    and the number never moved. The count must mean "what a re-run could fix"."""
+    from src.db.mutations.scraper import upsert_transactions
+    from src.db.queries.scraper import pending_enrichment_count
+
+    upsert_transactions(
+        [
+            _txn_row(unique_id="scraped-now", bank_category=None),
+            # Stored by an older sync; the provider no longer returns it.
+            _txn_row(unique_id="abandoned", activity_date="2026-01-01", bank_category=None),
+        ]
+    )
+
+    assert pending_enrichment_count(["scraped-now"]) == 1
+    assert pending_enrichment_count([]) == 0, "a scrape that returned nothing owes nothing"
+
+
 def test_enriched_identifiers_and_pending_count_drive_the_skip_set(scraper_db):
     """What the next sync sends the sidecar, and what the UI shows as remaining.
     Both are windowed and per-company, so neither can leak across providers."""
@@ -250,9 +294,10 @@ def test_enriched_identifiers_and_pending_count_drive_the_skip_set(scraper_db):
 
     assert enriched_identifiers("isracard", "2026-05-01") == ["abc"]
     assert enriched_identifiers("amex", "2026-05-01") == ["ghi"]
-    # "def" is the only isracard row in the window still missing a category.
-    assert pending_enrichment_count("isracard", "2026-05-01") == 1
-    assert pending_enrichment_count("amex", "2026-05-01") == 0
+    # "def" is the only one of these the scrape returned that still needs a
+    # category; "jkl" is enriched and "u3" belongs to amex.
+    assert pending_enrichment_count(["u1", "u2", "u4"]) == 1
+    assert pending_enrichment_count(["u3"]) == 0
 
 
 def test_get_last_run_carries_the_enrichment_counters(scraper_db):

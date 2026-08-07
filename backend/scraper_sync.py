@@ -132,6 +132,17 @@ def _scrape_account(
         return resp.json()
 
 
+def _bank_category(tx: dict) -> str | None:
+    """The provider's category for this transaction, or None if it was not asked.
+
+    See the comment at the call site: None and "" mean genuinely different
+    things here, and conflating them makes the enrichment backlog unable to
+    reach zero.
+    """
+    raw = tx.get("category")
+    return None if raw is None else str(raw).strip()
+
+
 def _build_transaction_row(tx: dict, company_id: str, account_number: str) -> dict | None:
     """Map a scraped transaction into the row shape upsert_transactions() expects.
 
@@ -163,10 +174,22 @@ def _build_transaction_row(tx: dict, company_id: str, account_number: str) -> di
         "raw": json.dumps(tx),
         # The provider's own category, promoted out of `raw` so it is queryable
         # and so the next sync can tell which transactions it has already paid
-        # to enrich. Absent whenever the enrichment pass skipped, deferred or
-        # was never asked for - and the upsert treats NULL as "don't know",
-        # never as "no category", so an unenriched re-scrape cannot erase it.
-        "bank_category": (tx.get("category") or "").strip() or None,
+        # to enrich.
+        #
+        # The absent/empty distinction is load-bearing, and the sidecar hands it
+        # to us for free. getExtraScrapTransaction only adds a `category` key
+        # when its fetch actually returned data; a transaction the governor
+        # skipped, deferred or never enriched comes back with no such key at
+        # all. So:
+        #
+        #   key missing -> NULL, "we never asked" - still owed an enrichment,
+        #                  and the upsert's COALESCE keeps whatever we already
+        #                  knew rather than erasing it
+        #   key present -> the provider's answer, INCLUDING "" for a transaction
+        #                  it has no category for. Storing that empty answer is
+        #                  what stops us re-asking the same hopeless question
+        #                  every sync and reporting it as a backlog forever.
+        "bank_category": _bank_category(tx),
     }
 
 
@@ -349,7 +372,7 @@ def run_sync(
                 stats = result.get("enrichment") or {}
                 enrichment_budget_left -= stats.get("spentMs", 0) / 1000
                 enrichment_added = stats.get("enriched", 0)
-                enrichment_missing = pending_enrichment_count(company_id, start_date)
+                enrichment_missing = pending_enrichment_count([r["unique_id"] for r in rows])
 
             finish_run_account(
                 run_id,
