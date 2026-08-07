@@ -198,6 +198,7 @@ function Spending() {
           category={category}
           open={longOpen}
           onToggle={() => setLongOpen((o) => !o)}
+          onSelectMonth={setMonthKey}
         />
 
         <TransactionList

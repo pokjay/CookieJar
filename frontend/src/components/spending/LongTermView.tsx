@@ -25,12 +25,15 @@ export default function LongTermView({
   category,
   open,
   onToggle,
+  onSelectMonth,
 }: {
   model: SpendingModel;
   monthKey: number;
   category: string | null;
   open: boolean;
   onToggle: () => void;
+  /** Jump the whole page to a month by clicking its bar. */
+  onSelectMonth?: (key: number) => void;
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
 
@@ -79,6 +82,9 @@ export default function LongTermView({
               {bars.map((b, i) => {
                 const { year, month } = keyToYearMonth(b.key);
                 const isCurrent = b.key === key;
+                // Only months the model actually has are worth jumping to; the rest
+                // stay hoverable so the tooltip still explains the gap.
+                const selectable = !!onSelectMonth && !isCurrent && model.byKey.has(b.key);
                 return (
                   <button
                     key={b.key}
@@ -87,8 +93,14 @@ export default function LongTermView({
                     onPointerEnter={() => setHovered(i)}
                     onFocus={() => setHovered(i)}
                     onBlur={() => setHovered((h) => (h === i ? null : h))}
-                    aria-label={`${monthLabel(year, month)}: ${nis(b.value)}`}
-                    className="flex h-full min-w-0 flex-1 cursor-default flex-col justify-end rounded-t-[4px] focus:outline-none focus-visible:ring-2 focus-visible:ring-fx-accent"
+                    onClick={selectable ? () => onSelectMonth(b.key) : undefined}
+                    aria-label={
+                      `${monthLabel(year, month)}: ${nis(b.value)}` +
+                      (selectable ? " — show this month" : "")
+                    }
+                    className={`flex h-full min-w-0 flex-1 flex-col justify-end rounded-t-[4px] focus:outline-none focus-visible:ring-2 focus-visible:ring-fx-accent ${
+                      selectable ? "cursor-pointer" : "cursor-default"
+                    }`}
                   >
                     <div
                       className="rounded-t-[4px] transition-opacity"
