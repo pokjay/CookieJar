@@ -18,13 +18,34 @@ The backend unit layer and the scraper layer run on every PR via
 # Both unit layers (Python + scraper sidecar)
 make test
 
-# Integration tests (point at a throwaway local Postgres)
-TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/family_finance_test \
+# Integration tests (point at a throwaway local Postgres).
+# Keep the ?options=-csearch_path%3Dmoneyman — see the note below.
+TEST_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/family_finance_test?options=-csearch_path%3Dmoneyman' \
     uv run pytest -m integration
 
 # Full e2e via Docker (matches CI exactly)
 make e2e
 ```
+
+### `TEST_DATABASE_URL` must pin `search_path` to `moneyman`
+
+Everything lives in the `moneyman` schema, never `public`, so a connection that
+doesn't put `moneyman` on its `search_path` resolves against the wrong schema.
+`.env.example` already carries the `?options=-csearch_path%3Dmoneyman` suffix;
+this doc previously omitted it, which is a trap worth naming because two separate
+things depend on it:
+
+- **The queries under test.** `src/db/queries/` addresses tables unqualified
+  (`SELECT ... FROM transactions`), so without the pin they fail outright.
+- **The migrations, as run by the fixture.** `migrated_db` executes every
+  migration on a plain `create_engine(TEST_DATABASE_URL)` connection — whatever
+  the URL pins is all it gets. dbmate normally supplies this itself, so a
+  migration that works under `dbmate up` can still fail here.
+
+Migrations are also **schema-qualified** (`ALTER TABLE moneyman.foo`) so they do
+not depend on the pin at all. Keep new ones that way: qualifying is the robust
+fix, and pinning `search_path` when you verify a migration by hand hides exactly
+this bug.
 
 ### The e2e stack runs under its own compose project
 
