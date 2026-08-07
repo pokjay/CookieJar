@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [0.12.1](https://github.com/pokjay/CookieJar/compare/v0.12.0...v0.12.1) (2026-08-07)
+
+
+### Bug Fixes
+
+* **scraper:** make Isracard transaction enrichment opt-in and surface real failure reasons ([#159](https://github.com/pokjay/CookieJar/issues/159)) ([3db2908](https://github.com/pokjay/CookieJar/commit/3db29089ced707df9aaab31bcf7d8e75497bb74c))
+* **scraper:** pace and budget Isracard/Amex enrichment so a 429 can't lose a scrape ([#161](https://github.com/pokjay/CookieJar/issues/161)) ([d331d95](https://github.com/pokjay/CookieJar/commit/d331d95ae4a287344a006fbbba3c055dc7988641)), closes [#149](https://github.com/pokjay/CookieJar/issues/149)
+
 ## [0.12.0](https://github.com/pokjay/CookieJar/compare/v0.11.0...v0.12.0) (2026-07-31)
 
 
