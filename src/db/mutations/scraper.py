@@ -146,7 +146,11 @@ def mark_stale_runs() -> None:
 #
 #   * bank_category only ever moves from NULL to a value, never back;
 #   * raw is replaced only when the incoming copy is at least as enriched as the
-#     stored one - either it carries a category, or the stored row never had.
+#     stored one - either it carries a REAL category, or the stored row never
+#     had one. Note NULLIF: an empty answer is not "enriched" for this purpose,
+#     so it must not pull raw backwards either. Both rules read the incoming
+#     category through the same NULLIF so they can never disagree about what
+#     counts as enriched.
 #
 # Three-valued, not two: NULL means "never asked", '' means "asked, and the
 # provider has no category for this one" (see _bank_category in
@@ -171,7 +175,7 @@ _UPSERT_TRANSACTION_SQL = """
     )
     ON CONFLICT (unique_id) DO UPDATE SET
         raw = CASE
-                WHEN EXCLUDED.bank_category IS NOT NULL
+                WHEN NULLIF(EXCLUDED.bank_category, '') IS NOT NULL
                   OR transactions.bank_category IS NULL
                 THEN EXCLUDED.raw
                 ELSE transactions.raw
@@ -186,7 +190,8 @@ _UPSERT_TRANSACTION_SQL = """
             NULLIF(EXCLUDED.bank_category, ''), transactions.bank_category, EXCLUDED.bank_category
           )
        OR (transactions.raw IS DISTINCT FROM EXCLUDED.raw
-           AND (EXCLUDED.bank_category IS NOT NULL OR transactions.bank_category IS NULL))
+           AND (NULLIF(EXCLUDED.bank_category, '') IS NOT NULL
+                OR transactions.bank_category IS NULL))
     RETURNING (xmax = 0) AS inserted
 """
 

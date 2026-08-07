@@ -241,14 +241,45 @@ def test_an_empty_category_records_that_the_provider_has_none(scraper_db):
 
 def test_an_empty_category_never_displaces_a_real_one(scraper_db):
     """The other half: a transient empty answer must not wipe a category an
-    earlier run collected."""
+    earlier run collected — and must not drag `raw` backwards either.
+
+    `raw` is the subtler half. '' is non-NULL, so a rule keyed on "is not null"
+    would let an empty answer replace an enriched `raw` while bank_category
+    correctly kept the real category, leaving the two disagreeing about the same
+    transaction. Both rules therefore read the incoming category through the
+    same NULLIF.
+    """
     from src.db.mutations.scraper import upsert_transactions
 
-    upsert_transactions([_txn_row(bank_category="פארמה")])
-    inserted, updated = upsert_transactions([_txn_row(bank_category="")])
+    enriched_raw = '{"description": "STARBUCKS", "category": "פארמה"}'
+    upsert_transactions([_txn_row(bank_category="פארמה", raw=enriched_raw)])
 
-    assert _stored(scraper_db, "2026-06-01_isracard_1234_10_abc").bank_category == "פארמה"
-    assert (inserted, updated) == (0, 0)
+    inserted, updated = upsert_transactions(
+        [_txn_row(bank_category="", raw='{"description": "STARBUCKS", "category": ""}')]
+    )
+
+    stored = _stored(scraper_db, "2026-06-01_isracard_1234_10_abc")
+    assert stored.bank_category == "פארמה"
+    # jsonb comes back as a dict, so this reads the value rather than the text.
+    assert stored.raw["category"] == "פארמה", "raw regressed to the empty-category copy"
+    assert (inserted, updated) == (0, 0), "a strictly poorer copy is not an update"
+
+
+def test_an_empty_category_still_refreshes_raw_on_a_row_that_had_none(scraper_db):
+    """The guard above must not block the legitimate case: a row we had never
+    enriched, where '' is genuinely new information and its raw is the first one
+    that came from an actual fetch."""
+    from src.db.mutations.scraper import upsert_transactions
+
+    upsert_transactions([_txn_row()])
+    inserted, updated = upsert_transactions(
+        [_txn_row(bank_category="", raw='{"description": "STARBUCKS", "rawTransaction": {}}')]
+    )
+
+    stored = _stored(scraper_db, "2026-06-01_isracard_1234_10_abc")
+    assert stored.bank_category == ""
+    assert "rawTransaction" in stored.raw
+    assert (inserted, updated) == (0, 1)
 
 
 def test_pending_count_ignores_rows_this_scrape_did_not_return(scraper_db):
