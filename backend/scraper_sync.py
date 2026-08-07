@@ -72,7 +72,9 @@ def transaction_unique_id(tx: dict, company_id: str, account_number: str) -> str
     return "_".join(str(p if p is not None else "").strip() for p in parts)
 
 
-def _scrape_account(credential: dict, start_date: str) -> dict:
+def _scrape_account(
+    credential: dict, start_date: str, additional_transaction_info: bool = False
+) -> dict:
     """POST to the scraper sidecar for a single account."""
     headers = {}
     if _SCRAPER_TOKEN:
@@ -80,7 +82,11 @@ def _scrape_account(credential: dict, start_date: str) -> dict:
     with httpx.Client(timeout=_SCRAPER_HTTP_TIMEOUT) as client:
         resp = client.post(
             f"{_SCRAPER_URL}/scrape",
-            json={"account": credential, "startDate": start_date},
+            json={
+                "account": credential,
+                "startDate": start_date,
+                "additionalTransactionInformation": additional_transaction_info,
+            },
             headers=headers,
         )
         resp.raise_for_status()
@@ -119,8 +125,18 @@ def _build_transaction_row(tx: dict, company_id: str, account_number: str) -> di
     }
 
 
-def run_sync(credentials: list[dict], run_id: str, lookback_days: int) -> None:
+def run_sync(
+    credentials: list[dict],
+    run_id: str,
+    lookback_days: int,
+    additional_transaction_info: bool = False,
+) -> None:
     """Background task: scrape each account and upsert transactions.
+
+    additional_transaction_info asks the sidecar for the provider's per-transaction
+    extra details. It defaults off because it is what gets isracard/amex
+    rate-limited (HTTP 429), and a 429 there fails the whole scrape even though
+    the transactions themselves were already fetched successfully.
 
     Guarantees the run is always finished (never left 'running' forever): the
     account loop and overall-status computation run under try/finally, so an
@@ -142,21 +158,46 @@ def run_sync(credentials: list[dict], run_id: str, lookback_days: int) -> None:
             insert_run_account(run_id, account=account_title, company_id=company_id)
 
             try:
-                result = _scrape_account(credential, start_date)
+                result = _scrape_account(credential, start_date, additional_transaction_info)
             except httpx.ConnectError:
                 logger.error("Scraper service unreachable for %s/%s", company_id, account_title)
-                finish_run_account(run_id, account_title, company_id, "error", "unavailable", 0)
+                finish_run_account(
+                    run_id,
+                    account_title,
+                    company_id,
+                    "error",
+                    "unavailable",
+                    0,
+                    "The scraper service is not reachable. Check that the scraper "
+                    "container is running.",
+                )
                 account_statuses.append("error")
                 continue
             except Exception as exc:
                 logger.error("Scraper request failed for %s/%s: %s", company_id, account_title, exc)
-                finish_run_account(run_id, account_title, company_id, "error", "unknown", 0)
+                finish_run_account(
+                    run_id,
+                    account_title,
+                    company_id,
+                    "error",
+                    "unknown",
+                    0,
+                    "The request to the scraper service failed. Check the backend logs.",
+                )
                 account_statuses.append("error")
                 continue
 
             error_type = result.get("errorType")
             if error_type:
-                finish_run_account(run_id, account_title, company_id, "error", error_type, 0)
+                finish_run_account(
+                    run_id,
+                    account_title,
+                    company_id,
+                    "error",
+                    error_type,
+                    0,
+                    result.get("errorMessage"),
+                )
                 account_statuses.append("error")
                 continue
 
@@ -186,7 +227,15 @@ def run_sync(credentials: list[dict], run_id: str, lookback_days: int) -> None:
                 imported = upsert_transactions(rows)
             except Exception as exc:
                 logger.error("Upsert failed for %s/%s: %s", company_id, account_title, exc)
-                finish_run_account(run_id, account_title, company_id, "error", "db_error", 0)
+                finish_run_account(
+                    run_id,
+                    account_title,
+                    company_id,
+                    "error",
+                    "db_error",
+                    0,
+                    "The transactions were scraped but could not be written to the database.",
+                )
                 account_statuses.append("error")
                 continue
 

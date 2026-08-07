@@ -12,6 +12,8 @@ import {
   attachTrace,
   classifyError,
   createApp,
+  describeFailure,
+  ERROR_TYPE_FALLBACKS,
   FUTURE_MONTHS_TO_SCRAPE,
   isFieldRejected,
   isTrackerUrl,
@@ -206,9 +208,12 @@ describe("POST /scrape validation", () => {
       // over the shared hook rather than the hook itself.
       assert.equal(typeof options.preparePage, "function");
       assert.equal(options.showBrowser, false);
-      // #132: enrich transactions with the bank category and scrape upcoming
-      // months so delayed credit-card charges show up.
-      assert.equal(options.additionalTransactionInformation, true);
+      // The bank-category enrichment is opt-in per request and absent here, so
+      // it stays off — it is what trips isracard/amex's 429 rate limit, and
+      // CookieJar categorises from its own description_to_category table
+      // anyway. #132's other half (upcoming months, for delayed credit-card
+      // charges) is unconditional.
+      assert.equal(options.additionalTransactionInformation, false);
       assert.equal(options.futureMonthsToScrape, FUTURE_MONTHS_TO_SCRAPE);
     });
   });
@@ -250,10 +255,14 @@ describe("login-form rejection is reported as a credential problem", () => {
     const log = (...args) => lines.push(args);
     const diagnostics = { rejectedField: LOGIN_FORM_GUARDS.visaCal, fieldObserved: true };
 
-    // Thrown path: the crash evidence must survive the rejection message.
+    // Thrown path: the crash evidence must survive the rejection message. It is
+    // logged as its scrubbed stack (see scrubError) rather than the Error object
+    // itself, so assert on the text — the message and the stack must both be there.
     const crash = new Error("browser disconnected");
     logFailure("visaCal", "wrong-credentials", diagnostics, crash, undefined, log);
-    assert.ok(lines.some((args) => args.includes(crash)), "expected the thrown error to be logged");
+    const thrownText = JSON.stringify(lines);
+    assert.ok(thrownText.includes("browser disconnected"), "expected the thrown error to be logged");
+    assert.ok(thrownText.includes("app.test.js"), "expected the stack to survive too");
 
     // Returned-result path: the library's own errorType/errorMessage survive too.
     lines.length = 0;
@@ -430,12 +439,72 @@ describe("POST /scrape failure paths", () => {
     });
     await withServer({ scraperFactory: factory }, async (base) => {
       const { body } = await postScrape(base, VALID_BODY);
-      assert.deepEqual(Object.keys(body).sort(), ["accountNumber", "errorType", "transactions"]);
+      assert.deepEqual(Object.keys(body).sort(), [
+        "accountNumber",
+        "errorMessage",
+        "errorType",
+        "transactions",
+      ]);
+      // errorMessage is OUR sentence, chosen by describeFailure — never the
+      // provider's text, which is what carries the credentials and tokens.
+      assert.equal(body.errorMessage, ERROR_TYPE_FALLBACKS["generic-error"]);
       const raw = JSON.stringify(body);
       assert.ok(!raw.includes("hunter2-secret"));
       assert.ok(!raw.includes("user-1"));
       assert.ok(!raw.includes("Request Rejected"));
     });
+  });
+
+  test("the failure log keeps the URL's path but never its query string", () => {
+    // CLAUDE.md: query strings from bank sites are where tokens and record ids
+    // live, and this line goes to the container log.
+    const lines = [];
+    const log = (...args) => lines.push(args);
+    const raw =
+      "Automation detected and blocked. Status: 429, URL: " +
+      "https://digital.isracard.co.il/services/ProxyRequestHandler.ashx?reqName=PirteyIska_204" +
+      "&CardIndex=0&shovarRatz=651687167 — blocked.";
+    logFailure("isracard", "generic-error", {}, null, { errorType: "GENERIC", errorMessage: raw }, log);
+    const text = JSON.stringify(lines);
+    assert.ok(text.includes("ProxyRequestHandler.ashx"), "the path is the useful part — keep it");
+    assert.ok(!text.includes("shovarRatz"));
+    assert.ok(!text.includes("651687167"));
+    assert.ok(!text.includes("reqName"));
+  });
+
+  test("a 429 automation block is explained without echoing the blocked URL", async () => {
+    // The real isracard message, verbatim — it embeds the PirteyIska_204 query
+    // string, and shovarRatz is a transaction identifier.
+    const raw =
+      "Automation detected and blocked by server. Status: 429, URL: " +
+      "https://digital.isracard.co.il/services/ProxyRequestHandler.ashx?reqName=PirteyIska_204" +
+      "&CardIndex=0&shovarRatz=651687167&moedChiuv=072026. The site is actively blocking access";
+    const factory = stubFactory({
+      result: { success: false, errorType: "GENERIC", errorMessage: raw },
+    });
+    await withServer({ scraperFactory: factory }, async (base) => {
+      const { body } = await postScrape(base, VALID_BODY);
+      assert.equal(body.errorType, "generic-error");
+      assert.match(body.errorMessage, /rate-limited/i);
+      assert.match(body.errorMessage, /extra transaction details/i);
+      const serialized = JSON.stringify(body);
+      assert.ok(!serialized.includes("shovarRatz"));
+      assert.ok(!serialized.includes("651687167"));
+      assert.ok(!serialized.includes("isracard.co.il"));
+    });
+  });
+
+  test("extra transaction details are off unless the caller opts in", async () => {
+    const seen = [];
+    const factory = (options) => {
+      seen.push(options.additionalTransactionInformation);
+      return { scrape: async () => ({ success: true, accounts: [] }) };
+    };
+    await withServer({ scraperFactory: factory }, async (base) => {
+      await postScrape(base, VALID_BODY);
+      await postScrape(base, { ...VALID_BODY, additionalTransactionInformation: true });
+    });
+    assert.deepEqual(seen, [false, true]);
   });
 
   test("scrape() throwing classifies via classifyError and leaks nothing", async () => {

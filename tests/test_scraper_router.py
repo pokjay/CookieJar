@@ -216,8 +216,41 @@ def _run_sync_dispatch(payload, credentials=None):
     ):
         scraper_router.scraper_sync(payload, tasks, _fake_request())
     assert len(tasks.tasks) == 1
-    dispatched, _run_id, _lookback = tasks.tasks[0].args
+    dispatched, _run_id, _lookback, _extra_details = tasks.tasks[0].args
     return dispatched
+
+
+def _run_sync_extra_details(payload):
+    """The extra-details flag as actually dispatched to run_sync."""
+    tasks = BackgroundTasks()
+    with (
+        patch.object(scraper_router, "is_mock_mode", return_value=False),
+        patch.object(scraper_router, "mark_stale_runs"),
+        patch.object(scraper_router, "has_running_run", return_value=False),
+        patch.object(scraper_router, "get_credentials", return_value=list(_VAULT)),
+        patch.object(scraper_router, "insert_run", return_value="run-1"),
+    ):
+        scraper_router.scraper_sync(payload, tasks, _fake_request())
+    return tasks.tasks[0].args[3]
+
+
+def test_sync_defaults_extra_details_off():
+    """#149: the per-transaction enrichment fetch is what gets isracard/amex
+    rate-limited, so a client that doesn't ask for it must not get it."""
+    payload = scraper_router.SyncPayload(db_password="pw", lookback_days=7)
+    assert _run_sync_extra_details(payload) is False
+
+
+def test_sync_forwards_extra_details_alongside_a_selection():
+    """The #150 selector and the #149 toggle are independent — asking for one
+    must not drop the other."""
+    payload = scraper_router.SyncPayload(
+        db_password="pw",
+        lookback_days=7,
+        account_uuids=["u-cal"],
+        additional_transaction_info=True,
+    )
+    assert _run_sync_extra_details(payload) is True
 
 
 def test_sync_without_a_selection_still_scrapes_every_account():

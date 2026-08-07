@@ -59,8 +59,13 @@ def finish_run_account(
     status: str,
     error_type: str | None,
     transactions_imported: int,
+    error_message: str | None = None,
 ) -> None:
-    """Update the per-account row with final status."""
+    """Update the per-account row with final status.
+
+    error_message is the scraper's own human-readable explanation, not the
+    provider's error text — see describeFailure() in scraper/src/app.js.
+    """
     if is_mock_mode():
         return
     execute_mutation(
@@ -68,6 +73,7 @@ def finish_run_account(
         UPDATE scraper_run_accounts
         SET status = :status,
             error_type = :error_type,
+            error_message = :error_message,
             transactions_imported = :transactions_imported
         WHERE run_id = :run_id ::uuid
           AND account = :account
@@ -79,6 +85,7 @@ def finish_run_account(
             "company_id": company_id,
             "status": status,
             "error_type": error_type,
+            "error_message": error_message,
             "transactions_imported": transactions_imported,
         },
     )

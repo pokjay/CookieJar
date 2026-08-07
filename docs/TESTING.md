@@ -5,7 +5,7 @@ Four layers of tests, each with a different scope and runtime cost.
 | Layer | Location | Runner | Touches DB? |
 |---|---|---|---|
 | Unit / data-function | `tests/test_*.py` (no `integration` mark) | `uv run pytest` | No — pure pandas / Python |
-| Scraper sidecar unit | `scraper/test/*.test.js` | `cd scraper && npm test` (`node:test`, no extra deps) | No |
+| Scraper sidecar unit | `scraper/test/*.test.js` | `make test-scraper` (`node:test`, no extra deps) | No |
 | Integration | `tests/test_*.py` marked `@pytest.mark.integration` (or `pytestmark = pytest.mark.integration`) | `uv run pytest -m integration` | Yes — needs `TEST_DATABASE_URL` |
 | End-to-end | `e2e/*.spec.ts` | `make e2e` (Docker) | Yes — seeded compose DB |
 
@@ -15,16 +15,52 @@ The backend unit layer and the scraper layer run on every PR via
 ## Running locally
 
 ```bash
-# Unit tests only
-uv run pytest
+# Both unit layers (Python + scraper sidecar)
+make test
 
-# Integration tests (point at a throwaway local Postgres)
-TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/family_finance_test \
+# Integration tests (point at a throwaway local Postgres).
+# Keep the ?options=-csearch_path%3Dmoneyman — see the note below.
+TEST_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/family_finance_test?options=-csearch_path%3Dmoneyman' \
     uv run pytest -m integration
 
 # Full e2e via Docker (matches CI exactly)
 make e2e
 ```
+
+### `TEST_DATABASE_URL` must pin `search_path` to `moneyman`
+
+Everything lives in the `moneyman` schema, never `public`, so a connection that
+doesn't put `moneyman` on its `search_path` resolves against the wrong schema.
+`.env.example` already carries the `?options=-csearch_path%3Dmoneyman` suffix;
+this doc previously omitted it, which is a trap worth naming because two separate
+things depend on it:
+
+- **The queries under test.** `src/db/queries/` addresses tables unqualified
+  (`SELECT ... FROM transactions`), so without the pin they fail outright.
+- **The migrations, as run by the fixture.** `migrated_db` executes every
+  migration on a plain `create_engine(TEST_DATABASE_URL)` connection — whatever
+  the URL pins is all it gets. dbmate normally supplies this itself, so a
+  migration that works under `dbmate up` can still fail here.
+
+Migrations are also **schema-qualified** (`ALTER TABLE moneyman.foo`) so they do
+not depend on the pin at all. Keep new ones that way: qualifying is the robust
+fix, and pinning `search_path` when you verify a migration by hand hides exactly
+this bug.
+
+### The e2e stack runs under its own compose project
+
+`COMPOSE_E2E` passes `-p cookiejar-e2e`, and that flag is load-bearing. The e2e
+file set layers on top of `docker-compose.yml`, so it inherits the real app's
+volume definitions — including `keepass_data`, which holds the KeePass vault of
+live bank credentials. Both `make e2e` and `make e2e-clean` run `down -v`. Under
+a shared project name that wipes the vault and the dev database as a side effect
+of running the tests, which is exactly how one vault was already lost. The
+separate project scopes those volumes to `cookiejar-e2e_*`, so `down -v` can only
+reach test state.
+
+If you ever add a compose target that runs `down -v`, check
+`docker compose <your -f flags> config --volumes` first and make sure
+`keepass_data` isn't in the list.
 
 The `migrated_db` fixture in `tests/conftest.py` drops and recreates the `moneyman` schema for each session — your test DB is wiped clean each run. **Note:** the fixture currently only applies the initial migration; if a test depends on objects from a later migration (e.g. `app_settings`), you need to apply it manually or extend the fixture.
 

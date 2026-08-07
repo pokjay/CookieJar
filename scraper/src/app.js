@@ -32,6 +32,85 @@ export function mapLibraryErrorType(errorType) {
   return LIBRARY_ERROR_TYPE_MAP[errorType] ?? "generic-error";
 }
 
+// The library assembles its error messages out of request URLs, and a bank
+// URL's query string is exactly where session tokens and record ids live — the
+// isracard 429 message carries shovarRatz=<transaction id>. Same rule as
+// traceUrl (origin + path, nothing else), applied to free text, because this
+// goes to the container log where CLAUDE.md forbids query strings outright.
+export function stripQueryStrings(text) {
+  return String(text ?? "").replace(/(https?:\/\/[^\s?#]+)\S*/g, "$1");
+}
+
+// Errors are logged for their stack — that is the whole point of keeping them —
+// but a stack embeds the message, and the message embeds the URL. Scrub the
+// rendered form rather than dropping it.
+export function scrubError(err) {
+  if (!err) return String(err);
+  return stripQueryStrings(err.stack || err.message || err);
+}
+
+// The UI used to show only the wire errorType — "generic-error" — which tells
+// the user nothing they can act on. But the library's own errorMessage must
+// never be forwarded verbatim: it is assembled from bank-supplied page text and
+// request URLs, and those carry session tokens, card indexes and transaction
+// ids. The isracard 429 message is the case in point — it embeds the full
+// PirteyIska_204 URL, query string and all, including shovarRatz=<transaction
+// id>. Echoing it would put that in the database and on screen.
+//
+// So we never echo. We MATCH the raw message against this fixed catalogue and
+// return OUR OWN sentence; anything unrecognised falls back to a line keyed on
+// the errorType alone. No bank-supplied text ever reaches the wire — the leak
+// test in test/app.test.js pins that.
+export const FAILURE_EXPLANATIONS = [
+  {
+    // Thrown by the library's assertAutomationNotBlocked() on a 429 or an
+    // anti-bot interstitial. For isracard/amex this is nearly always the
+    // per-transaction "extra details" fetch exhausting its budget: that request
+    // fires once per transaction PER MONTH PER CARD, so it grows
+    // multiplicatively while the rest of the scrape is a handful of calls.
+    match: /automation detected and blocked|block automation|bot detection|status: 429|\b429\b/i,
+    detail:
+      "The provider rate-limited the scraper (HTTP 429) and blocked further automated requests. " +
+      "This is almost always the per-transaction extra-details fetch, which runs once per " +
+      "transaction per month per card. Retry with extra transaction details turned off, or " +
+      "with a shorter lookback.",
+  },
+  {
+    match: /navigation timeout|timeout of \d+ ?ms/i,
+    detail:
+      "The provider's site did not respond in time. It may be slow, under maintenance, or it " +
+      "may have changed its login flow.",
+  },
+  {
+    match: /captcha/i,
+    detail: "The provider presented a CAPTCHA, which the scraper cannot solve. Try again later.",
+  },
+];
+
+// Used when nothing in the catalogue matched — keyed only on the wire errorType,
+// so still nothing provider-supplied.
+export const ERROR_TYPE_FALLBACKS = {
+  "wrong-credentials":
+    "The provider rejected the credentials. Check the id, card digits and password stored in the vault.",
+  timeout: "The provider's site did not respond in time.",
+  "account-blocked":
+    "The provider reports this account as blocked — you will need to contact them directly.",
+  "generic-error":
+    "The scrape failed for an unrecognised reason. Check the scraper logs for the trace around the failure.",
+  unknown:
+    "The scrape failed for an unrecognised reason. Check the scraper logs for the trace around the failure.",
+};
+
+export function describeFailure(errorType, rawMessage, diagnostics) {
+  // A field the site's own form rejected is the most specific thing we know,
+  // and the hint is a string we authored (see LOGIN_FORM_GUARDS), not the
+  // provider's — safe to surface as-is.
+  if (diagnostics?.rejectedField) return diagnostics.rejectedField.hint;
+  const hit = FAILURE_EXPLANATIONS.find((e) => e.match.test(String(rawMessage || "")));
+  if (hit) return hit.detail;
+  return ERROR_TYPE_FALLBACKS[errorType] ?? ERROR_TYPE_FALLBACKS["generic-error"];
+}
+
 // Banks sit behind anti-bot WAFs that reject a vanilla headless browser
 // outright ("Request Rejected" from Cal, a Cloudflare block page from amex).
 // israeli-bank-scrapers only supplies the scraping logic — it launches a plain
@@ -343,26 +422,26 @@ export function logFailure(companyId, errorType, diagnostics, err, result, log =
     // Keep the evidence underneath: if what failed was actually something else
     // entirely (a crash, a network error), its message and stack must not vanish
     // behind the rejection message.
-    if (err) out("[scrape %s] underlying error:", companyId, err);
+    if (err) out("[scrape %s] underlying error: %s", companyId, scrubError(err));
     if (result) {
       out(
         "[scrape %s] underlying result: errorType=%s, errorMessage=%s",
         companyId,
         result.errorType,
-        result.errorMessage,
+        stripQueryStrings(result.errorMessage),
       );
     }
     return;
   }
   if (err) {
-    out("[scrape %s] scrape threw (%s):", companyId, errorType, err);
+    out("[scrape %s] scrape threw (%s): %s", companyId, errorType, scrubError(err));
     return;
   }
   out(
     "[scrape %s] scrape unsuccessful (errorType=%s, errorMessage=%s) → reported as %s",
     companyId,
     result.errorType,
-    result.errorMessage,
+    stripQueryStrings(result.errorMessage),
     errorType,
   );
 }
@@ -390,7 +469,12 @@ export function createApp({
   });
 
   app.post("/scrape", authMiddleware, async (req, res) => {
-    const { account, startDate } = req.body;
+    // Off unless the caller asks for it. The extra-details pass is what gets
+    // isracard/amex rate-limited (see FAILURE_EXPLANATIONS), and the only field
+    // it adds — the provider's own category string — is not read by CookieJar,
+    // which categorises from its own description_to_category table. So the
+    // default buys nothing and costs a whole scrape when it trips the 429.
+    const { account, startDate, additionalTransactionInformation = false } = req.body;
 
     if (!account || !account.companyId || !account.credentials) {
       return res.status(400).json({ errorType: "generic-error", transactions: [] });
@@ -416,7 +500,8 @@ export function createApp({
         combineInstallments: false,
         // Enrich each transaction with the bank-supplied category (isracard/amex
         // make an extra per-transaction request; no-op for the other providers).
-        additionalTransactionInformation: true,
+        // Caller-controlled, default off — see the destructure above.
+        additionalTransactionInformation: Boolean(additionalTransactionInformation),
         futureMonthsToScrape: FUTURE_MONTHS_TO_SCRAPE,
         showBrowser: false,
         navigationRetryCount: 3,
@@ -424,7 +509,7 @@ export function createApp({
         preparePage: (page) => preparePage(page, { companyId, diagnostics }),
       });
     } catch (err) {
-      stampedConsole("[scrape %s] createScraper failed:", companyId, err);
+      stampedConsole("[scrape %s] createScraper failed: %s", companyId, scrubError(err));
       return res.status(400).json({ errorType: "generic-error", transactions: [] });
     }
 
@@ -434,13 +519,23 @@ export function createApp({
     } catch (err) {
       const errorType = resolveThrownErrorType(err, diagnostics);
       logFailure(companyId, errorType, diagnostics, err);
-      return res.json({ errorType, transactions: [], accountNumber: null });
+      return res.json({
+        errorType,
+        errorMessage: describeFailure(errorType, err?.message, diagnostics),
+        transactions: [],
+        accountNumber: null,
+      });
     }
 
     if (!result.success) {
       const errorType = resolveErrorType(result.errorType, diagnostics);
       logFailure(companyId, errorType, diagnostics, null, result);
-      return res.json({ errorType, transactions: [], accountNumber: null });
+      return res.json({
+        errorType,
+        errorMessage: describeFailure(errorType, result.errorMessage, diagnostics),
+        transactions: [],
+        accountNumber: null,
+      });
     }
 
     // Flatten transactions from all accounts in the result.

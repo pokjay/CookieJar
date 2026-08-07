@@ -359,6 +359,7 @@ CREATE TABLE moneyman.scraper_run_accounts (
     status text NOT NULL,
     error_type text,
     transactions_imported integer DEFAULT 0 NOT NULL,
+    error_message text,
     CONSTRAINT scraper_run_accounts_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'success'::text, 'error'::text])))
 );
 
@@ -591,4 +592,5 @@ INSERT INTO moneyman.schema_migrations (version) VALUES
     ('20260417000000'),
     ('20260522000000'),
     ('20260703000000'),
-    ('20260731000000');
+    ('20260731000000'),
+    ('20260807000000');

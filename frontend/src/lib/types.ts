@@ -368,6 +368,7 @@ export interface ScraperRunAccount {
   company_id: string;
   status: "pending" | "success" | "error";
   error_type: string | null;
+  error_message: string | null;
   transactions_imported: number;
 }
 
@@ -392,6 +393,7 @@ export interface ScraperSyncPayload {
   lookback_days: number;
   /** Vault UUIDs to scrape. Omit to scrape every account in the vault. */
   account_uuids?: string[];
+  additional_transaction_info?: boolean;
 }
 
 export interface ScraperAddAccountPayload {
