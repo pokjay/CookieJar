@@ -36,7 +36,16 @@ export default function SpendingHero({
   const extend = (a: number[]) =>
     a.length ? Array.from({ length: days }, (_, i) => a[Math.min(i, a.length - 1)]) : [];
 
-  const max = Math.max(...cur, ...prev, ...lastYear, 1) * 1.08;
+  // Scale to whichever point sits furthest from zero, in the data's own direction.
+  // `charged_amount` is negative for spend, so Math.max(...) here collapsed to the
+  // literal 1 floor: every point then projected millions of units past the 0-300
+  // viewBox, and with the chart's overflow-visible svg that invisible area path
+  // blanketed the page below the card and swallowed its clicks.
+  const extreme = [...cur, ...prev, ...lastYear].reduce(
+    (far, v) => (Math.abs(v) > Math.abs(far) ? v : far),
+    0
+  );
+  const max = (extreme || 1) * 1.08;
 
   const { year, month: m } = keyToYearMonth(key);
   const prevLabel = (() => {
