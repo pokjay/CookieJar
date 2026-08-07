@@ -37,8 +37,12 @@ export default function LongTermView({
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
 
+  // Anchor on the newest month with data rather than the selected one, so jumping
+  // back doesn't hide everything that came after it. The window slides only far
+  // enough to keep the selected month on screen.
+  const end = Math.min(model.latestKey, key + MONTHS_BACK - 1);
   const bars = Array.from({ length: MONTHS_BACK }, (_, i) => {
-    const k = key - (MONTHS_BACK - 1) + i;
+    const k = end - (MONTHS_BACK - 1) + i;
     const value = category
       ? model.categoryTotal(k, category)
       : model.totalThrough(k, 31);
