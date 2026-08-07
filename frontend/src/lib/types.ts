@@ -222,6 +222,8 @@ export interface TxnSubscription {
   max_amount: number;
   total_charges: number;
   total_spend: number;
+  months_present: number;
+  avg_monthly: number;
 }
 
 export interface TxnCategoryTrend {

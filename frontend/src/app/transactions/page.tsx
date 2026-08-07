@@ -84,14 +84,19 @@ function Spending() {
     if (monthKey === null && model.months.length) setMonthKey(model.latestKey);
   }, [model, monthKey]);
 
-  // Committed/recurring detection lives server-side; load it for the shown year.
-  const year = monthKey === null ? null : keyToYearMonth(monthKey).year;
+  // Committed/recurring detection lives server-side, over the 12 months ending
+  // at the shown month — a calendar-year window can't see a monthly bill early
+  // in the year, and resets every January (#162).
+  const ym = monthKey === null ? null : keyToYearMonth(monthKey);
+  const windowYear = ym?.year ?? null;
+  // keyToYearMonth is 0-indexed; the API takes 1-12.
+  const windowMonth = ym === null ? null : ym.month + 1;
   useEffect(() => {
-    if (year === null) return;
-    getTxnSubscriptions(year)
+    if (windowYear === null || windowMonth === null) return;
+    getTxnSubscriptions(windowYear, windowMonth)
       .then((subs) => setCommitted(new Set(subs.map((s) => s.name))))
       .catch(() => setCommitted(new Set()));
-  }, [year]);
+  }, [windowYear, windowMonth]);
 
   const goPrev = useCallback(() => setMonthKey((k) => (k === null ? k : k - 1)), []);
   const goNext = useCallback(

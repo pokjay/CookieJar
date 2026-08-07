@@ -187,6 +187,71 @@ class TestComputeSubscriptions:
         df = self._make_subscription_df()
         assert compute_subscriptions(df, 1900) == []
 
+    def _monthly_bill(self, name: str, start: tuple[int, int], months: int,
+                      amounts: list[float] | None = None) -> list[dict]:
+        """One charge per month for `months` months starting at (year, month)."""
+        rows = []
+        for i in range(months):
+            key = start[0] * 12 + (start[1] - 1) + i
+            year, month = divmod(key, 12)
+            month += 1
+            amount = amounts[i] if amounts else 500.0
+            rows.append({
+                "activity_date": pd.Timestamp(f"{year}-{month:02d}-05"),
+                "year": year,
+                "month": month,
+                "dow": 0,
+                "processed_description": name,
+                "charged_amount": amount,
+                "category": "Bills",
+                "account": "Card A",
+                "person": "Alice",
+            })
+        return rows
+
+    def test_detects_monthly_bill_early_in_the_year(self):
+        """The old count-based rule needed 10 charges, so nothing qualified before October."""
+        df = pd.DataFrame(self._monthly_bill("Daycare", (2025, 3), 18))
+        result = compute_subscriptions(df, 2026, month=3)  # only 3 charges in calendar 2026
+        assert [r["name"] for r in result] == ["Daycare"]
+        assert result[0]["months_present"] == 12
+
+    def test_survives_the_year_boundary(self):
+        """January used to reset the window and empty the committed set."""
+        df = pd.DataFrame(self._monthly_bill("Insurance", (2025, 1), 13))
+        assert [r["name"] for r in compute_subscriptions(df, 2025, month=12)] == ["Insurance"]
+        assert [r["name"] for r in compute_subscriptions(df, 2026, month=1)] == ["Insurance"]
+
+    def test_stability_is_judged_on_monthly_totals(self):
+        """A steady monthly bill split into two uneven charges is still committed."""
+        rows = []
+        for i in range(12):
+            key = 2025 * 12 + i
+            year, month = divmod(key, 12)
+            rows.extend(self._monthly_bill("Telco", (year, month + 1), 1, [59.0]))
+            rows.extend(self._monthly_bill("Telco", (year, month + 1), 1, [44.0]))
+        result = compute_subscriptions(pd.DataFrame(rows), 2025, month=12)
+        assert [r["name"] for r in result] == ["Telco"]
+        assert result[0]["avg_monthly"] == 103.0
+
+    def test_ignores_frequent_but_variable_merchant(self):
+        """High charge count with erratic monthly totals is discretionary, not committed."""
+        amounts = [50.0, 900.0, 120.0, 40.0, 1500.0, 75.0, 30.0, 600.0, 90.0, 20.0, 1100.0, 60.0]
+        df = pd.DataFrame(self._monthly_bill("Supermarket", (2025, 1), 12, amounts))
+        assert compute_subscriptions(df, 2025, month=12) == []
+
+    def test_month_defaults_to_calendar_year(self):
+        df = pd.DataFrame(self._monthly_bill("Gym", (2025, 1), 12))
+        assert compute_subscriptions(df, 2025) == compute_subscriptions(df, 2025, month=12)
+
+    def test_ignores_merchant_that_stopped_billing(self):
+        """Cancelled six months ago: present in half the window, below the 60% threshold."""
+        df = pd.DataFrame(
+            self._monthly_bill("Cancelled", (2025, 3), 6)
+            + self._monthly_bill("Active", (2025, 3), 12)
+        )
+        assert [r["name"] for r in compute_subscriptions(df, 2026, month=2)] == ["Active"]
+
 
 class TestComputeCategoryTrends:
     def test_groups_by_category_and_month(self):

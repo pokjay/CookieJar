@@ -94,6 +94,7 @@ function SubscriptionsTable({ data }: { data: TxnSubscription[] }) {
                   <th className="px-4 py-2 text-left">Description</th>
                   <th className="px-4 py-2 text-right">Max Amount</th>
                   <th className="px-4 py-2 text-right">Occurrences</th>
+                  <th className="px-4 py-2 text-right">Months</th>
                   <th className="px-4 py-2 text-right">Total Spend</th>
                 </tr>
               </thead>
@@ -109,6 +110,9 @@ function SubscriptionsTable({ data }: { data: TxnSubscription[] }) {
                     </td>
                     <td className="px-4 py-2.5 text-right text-cj-text-3">
                       {row.total_charges}
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-cj-text-3">
+                      {row.months_present}
                     </td>
                     <td className="px-4 py-2.5 text-right text-cj-positive">
                       {formatCurrencyFull(row.total_spend)}

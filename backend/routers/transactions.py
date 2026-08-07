@@ -131,8 +131,9 @@ def dashboard_avg_by_category(year: int = Query(...)):
 
 
 @router.get("/dashboard/subscriptions")
-def dashboard_subscriptions(year: int = Query(...)):
-    return compute_subscriptions(_txn(), year)
+def dashboard_subscriptions(year: int = Query(...), month: int | None = Query(None, ge=1, le=12)):
+    """Recurring charges in the 12 months ending at `month` (December when omitted)."""
+    return compute_subscriptions(_txn(), year, month)
 
 
 @router.get("/dashboard/category-trends")
