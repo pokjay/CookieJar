@@ -176,6 +176,9 @@ class SyncPayload(BaseModel):
     # Vault UUIDs to scrape. Omitted (None) means every account, which is what
     # a sync did before selection existed — so old clients keep working.
     account_uuids: list[str] | None = None
+    # Opt-in per run. Fetching the provider's per-transaction extra details is
+    # what trips isracard/amex's 429 rate limit, so it is off unless asked for.
+    additional_transaction_info: bool = False
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -303,7 +306,13 @@ def scraper_sync(
         run_id = insert_run(payload.lookback_days)
     except RunAlreadyRunningError:
         raise HTTPException(status_code=409, detail="A sync is already running.")
-    background_tasks.add_task(run_sync, credentials, run_id, payload.lookback_days)
+    background_tasks.add_task(
+        run_sync,
+        credentials,
+        run_id,
+        payload.lookback_days,
+        payload.additional_transaction_info,
+    )
     return {"run_id": run_id}
 
 

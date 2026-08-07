@@ -28,7 +28,12 @@ function SyncModal({
   onCancel,
   busy,
 }: {
-  onSync: (password: string, lookbackDays: number, accountUuids?: string[]) => void;
+  onSync: (
+    password: string,
+    lookbackDays: number,
+    accountUuids: string[] | undefined,
+    extraDetails: boolean,
+  ) => void;
   onCancel: () => void;
   busy: boolean;
 }) {
@@ -71,6 +76,11 @@ function SyncModal({
     });
   }
 
+  // Default off: the extra-details fetch runs once per transaction per month
+  // per card, which is what gets Isracard/Amex to answer 429 and fail the whole
+  // sync. Opt in only when the provider's own category data is actually wanted.
+  const [extraDetails, setExtraDetails] = useState(false);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60" onClick={!busy ? onCancel : undefined} />
@@ -95,7 +105,9 @@ function SyncModal({
             value={pw}
             disabled={busy}
             onChange={(e) => setPw(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && canSync && onSync(pw, days, selection)}
+            onKeyDown={(e) =>
+              e.key === "Enter" && canSync && onSync(pw, days, selection, extraDetails)
+            }
             className="w-full bg-cj-elevated border border-cj-border-strong rounded-lg px-3 py-2 text-sm text-cj-text focus:outline-none focus:ring-2 focus:ring-cj-accent disabled:opacity-50"
           />
         </div>
@@ -166,6 +178,26 @@ function SyncModal({
           {accountsError && <p className="text-xs text-cj-negative mt-1">{accountsError}</p>}
         </div>
 
+        <div>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={extraDetails}
+              disabled={busy}
+              onChange={(e) => setExtraDetails(e.target.checked)}
+              className="mt-0.5 accent-cj-accent disabled:opacity-50"
+            />
+            <span>
+              <span className="block text-sm text-cj-text">Fetch extra transaction details</span>
+              <span className="block text-xs text-cj-text-faint mt-0.5">
+                Adds the provider&apos;s own category to each transaction. Makes one extra request
+                per transaction, per month, per card — Isracard and Amex may rate-limit (429) and
+                fail the whole sync.
+              </span>
+            </span>
+          </label>
+        </div>
+
         <div className="flex gap-3 justify-end pt-1">
           <button
             onClick={onCancel}
@@ -176,7 +208,7 @@ function SyncModal({
           </button>
           <button
             disabled={!canSync}
-            onClick={() => onSync(pw, days, selection)}
+            onClick={() => onSync(pw, days, selection, extraDetails)}
             className="px-4 py-2 rounded-lg bg-cj-accent hover:bg-cj-accent-hover disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium text-white transition-colors"
           >
             {busy
@@ -220,23 +252,33 @@ function RunStatus({ status }: { status: ScraperStatus }) {
         </span>
       </div>
       {run.accounts.map((acct) => (
-        <div key={`${acct.account}-${acct.company_id}`} className="flex items-center justify-between gap-2 text-xs">
-          <span className="text-cj-text-faint truncate">
-            {acct.account} ({acct.company_id})
-          </span>
-          <span
-            className={
-              acct.status === "success"
-                ? "text-cj-positive"
-                : acct.status === "error"
-                ? "text-cj-negative"
-                : "text-cj-text-muted"
-            }
-          >
-            {acct.status === "success"
-              ? `${acct.transactions_imported} imported`
-              : acct.error_type ?? acct.status}
-          </span>
+        <div key={`${acct.account}-${acct.company_id}`} className="space-y-0.5">
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <span className="text-cj-text-faint truncate">
+              {acct.account} ({acct.company_id})
+            </span>
+            <span
+              className={
+                acct.status === "success"
+                  ? "text-cj-positive"
+                  : acct.status === "error"
+                  ? "text-cj-negative"
+                  : "text-cj-text-muted"
+              }
+            >
+              {acct.status === "success"
+                ? `${acct.transactions_imported} imported`
+                : acct.error_type ?? acct.status}
+            </span>
+          </div>
+          {/* The error_type above ("generic-error") is a code, not an
+              explanation. When the scraper knows what actually went wrong it
+              sends a sentence — show it, so the failure is actionable. */}
+          {acct.status === "error" && acct.error_message && (
+            <p className="text-xs text-cj-text-muted leading-snug pl-1 border-l-2 border-cj-negative/40 ml-0.5">
+              {acct.error_message}
+            </p>
+          )}
         </div>
       ))}
     </div>
@@ -285,7 +327,12 @@ export default function SyncButton() {
 
   useEffect(() => () => stopPolling(), []);
 
-  async function handleSync(password: string, lookbackDays: number, accountUuids?: string[]) {
+  async function handleSync(
+    password: string,
+    lookbackDays: number,
+    accountUuids: string[] | undefined,
+    extraDetails: boolean,
+  ) {
     setBusy(true);
     setError(null);
     try {
@@ -293,6 +340,7 @@ export default function SyncButton() {
         db_password: password,
         lookback_days: lookbackDays,
         ...(accountUuids ? { account_uuids: accountUuids } : {}),
+        additional_transaction_info: extraDetails,
       });
       setShowModal(false);
       await fetchStatus();

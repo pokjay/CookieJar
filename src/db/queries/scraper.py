@@ -1,5 +1,7 @@
 """DB queries for scraper run history."""
 
+import pandas as pd
+
 from src.db.connection import is_mock_mode, run_query
 
 
@@ -28,7 +30,7 @@ def get_last_run() -> dict | None:
 
     accounts_df = run_query(
         """
-        SELECT account, company_id, status, error_type, transactions_imported
+        SELECT account, company_id, status, error_type, error_message, transactions_imported
         FROM scraper_run_accounts
         WHERE run_id = :run_id ::uuid
         ORDER BY company_id, account
@@ -42,6 +44,9 @@ def get_last_run() -> dict | None:
             "company_id": r["company_id"],
             "status": r["status"],
             "error_type": r["error_type"],
+            # pandas turns a SQL NULL in a text column into NaN, which is not
+            # JSON-serialisable and would surface as the string "nan" downstream.
+            "error_message": r["error_message"] if pd.notna(r["error_message"]) else None,
             "transactions_imported": int(r["transactions_imported"]),
         }
         for _, r in accounts_df.iterrows()

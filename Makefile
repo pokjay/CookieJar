@@ -4,7 +4,10 @@ COMPOSE_DEV  := $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
 COMPOSE_DEVDB := $(COMPOSE) -f docker-compose.yml -f docker-compose.db.yml -f docker-compose.dev.yml
 COMPOSE_E2E  := $(COMPOSE) -f docker-compose.yml -f docker-compose.build.yml -f docker-compose.db.yml -f docker-compose.test.yml
 
-.PHONY: up down logs dev dev-rebuild dev-db dev-down doctor e2e e2e-up e2e-run e2e-down e2e-clean
+SCRAPER_IMAGE := ghcr.io/pokjay/cookiejar-scraper:latest
+
+.PHONY: up down logs dev dev-rebuild dev-db dev-down doctor e2e e2e-up e2e-run e2e-down e2e-clean \
+        test test-py test-scraper
 
 # ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -35,6 +38,28 @@ dev-rebuild:
 ## Stop dev services
 dev-down:
 	$(COMPOSE_DEV) down --remove-orphans
+
+# ─── Tests ────────────────────────────────────────────────────────────────────
+
+## Unit tests for both languages. Excludes e2e (see `make e2e`) and the
+## integration tests, which need TEST_DATABASE_URL.
+test: test-py test-scraper
+
+## Python. uv is the sanctioned host-side tool — it manages its own isolated
+## environment, so it never pollutes the host.
+test-py:
+	uv run pytest
+
+## Scraper (JS). There is no node_modules on the host and there is not supposed
+## to be, so this runs in the image with the local sources mounted over the
+## image's copies — the suite tests working-tree code, not what was baked in.
+test-scraper:
+	docker run --rm \
+		-v "$(CURDIR)/scraper/src:/app/src:ro" \
+		-v "$(CURDIR)/scraper/test:/app/test:ro" \
+		-v "$(CURDIR)/scraper/providers.json:/app/providers.json:ro" \
+		-v "$(CURDIR)/scraper/probes.json:/app/probes.json:ro" \
+		$(SCRAPER_IMAGE) npm test
 
 # ─── Bank-sync diagnostics ────────────────────────────────────────────────────
 

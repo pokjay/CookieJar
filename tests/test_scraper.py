@@ -7,7 +7,7 @@ import os
 from contextlib import ExitStack, contextmanager
 from datetime import date
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import httpx
 import pytest
@@ -19,6 +19,7 @@ os.environ.setdefault("USE_MOCK_DATA", "true")
 from backend.routers import scraper as scraper_router  # noqa: E402
 from backend.scraper_sync import (  # noqa: E402
     _build_transaction_row,
+    _scrape_account,
     run_sync,
     transaction_unique_id,
 )
@@ -292,7 +293,7 @@ def _run_sync_harness(scrape=None, upsert=None):
         patch("backend.scraper_sync.finish_run_account") as finish_run_account,
         patch("backend.scraper_sync.finish_run") as finish_run,
         patch("backend.scraper_sync.clear_all") as clear_all,
-        patch("backend.scraper_sync._scrape_account", side_effect=scrape),
+        patch("backend.scraper_sync._scrape_account", side_effect=scrape) as scrape_mock,
         patch("backend.scraper_sync.upsert_transactions", side_effect=upsert) as upsert_mock,
     ):
         yield SimpleNamespace(
@@ -300,6 +301,7 @@ def _run_sync_harness(scrape=None, upsert=None):
             finish_run=finish_run,
             clear_all=clear_all,
             upsert=upsert_mock,
+            scrape_account=scrape_mock,
         )
 
 
@@ -323,7 +325,7 @@ def test_run_sync_mixed_results_finish_run_partial():
         run_sync(_TWO_ACCOUNTS, "run-1", 30)
     mocks.finish_run.assert_called_once_with("run-1", "partial")
     mocks.finish_run_account.assert_any_call(
-        "run-1", "B", "visaCal", "error", "wrong-credentials", 0
+        "run-1", "B", "visaCal", "error", "wrong-credentials", 0, None
     )
 
 
@@ -351,9 +353,64 @@ def test_run_sync_sidecar_error_type_reaches_the_account_row_without_upsert():
     with _run_sync_harness(scrape=[failed]) as mocks:
         run_sync([{"companyId": "max", "accountTitle": "M"}], "run-1", 30)
     mocks.finish_run_account.assert_called_once_with(
-        "run-1", "M", "max", "error", "account-blocked", 0
+        "run-1", "M", "max", "error", "account-blocked", 0, None
     )
     mocks.upsert.assert_not_called()
+
+
+def test_run_sync_sidecar_error_message_reaches_the_account_row():
+    """The sidecar's human-readable explanation is what makes a failure
+    actionable in the UI — error_type alone is just a code."""
+    explanation = "The provider rate-limited the scraper (HTTP 429)."
+    failed = {
+        "errorType": "generic-error",
+        "errorMessage": explanation,
+        "transactions": [],
+    }
+    with _run_sync_harness(scrape=[failed]) as mocks:
+        run_sync([{"companyId": "isracard", "accountTitle": "A"}], "run-1", 30)
+    mocks.finish_run_account.assert_called_once_with(
+        "run-1", "A", "isracard", "error", "generic-error", 0, explanation
+    )
+
+
+def test_run_sync_forwards_the_extra_details_opt_in_and_defaults_it_off():
+    """additionalTransactionInformation is what trips isracard/amex's 429, so it
+    must reach the sidecar only when the caller actually asked for it."""
+    with _run_sync_harness(scrape=[_OK, _OK], upsert=lambda rows: len(rows)) as mocks:
+        run_sync([{"companyId": "isracard", "accountTitle": "A"}], "run-1", 30)
+        run_sync([{"companyId": "isracard", "accountTitle": "A"}], "run-2", 30, True)
+
+    sent = [call.args[2] for call in mocks.scrape_account.call_args_list]
+    assert sent == [False, True]
+
+
+def test_scrape_account_sends_the_extra_details_flag_to_the_sidecar():
+    """The flag has to survive the HTTP hop, not just run_sync's signature."""
+    captured = {}
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return _OK
+
+    class _Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def post(self, url, json, headers):
+            captured.update(json)
+            return _Resp()
+
+    with patch("backend.scraper_sync.httpx.Client", return_value=_Client()):
+        _scrape_account({"companyId": "isracard"}, "2026-07-01", True)
+
+    assert captured["additionalTransactionInformation"] is True
 
 
 def test_run_sync_connect_error_marks_account_unavailable():
@@ -362,7 +419,7 @@ def test_run_sync_connect_error_marks_account_unavailable():
     with _run_sync_harness(scrape=httpx.ConnectError("connection refused")) as mocks:
         run_sync([{"companyId": "isracard", "accountTitle": "A"}], "run-1", 30)
     mocks.finish_run_account.assert_called_once_with(
-        "run-1", "A", "isracard", "error", "unavailable", 0
+        "run-1", "A", "isracard", "error", "unavailable", 0, ANY
     )
     mocks.finish_run.assert_called_once_with("run-1", "error")
 
@@ -373,7 +430,7 @@ def test_run_sync_other_request_failure_marks_account_unknown():
     ) as mocks:
         run_sync([{"companyId": "isracard", "accountTitle": "A"}], "run-1", 30)
     mocks.finish_run_account.assert_called_once_with(
-        "run-1", "A", "isracard", "error", "unknown", 0
+        "run-1", "A", "isracard", "error", "unknown", 0, ANY
     )
 
 
@@ -392,7 +449,9 @@ def test_run_sync_upsert_failure_marks_db_error_and_continues_to_next_account():
     with _run_sync_harness(scrape=[_OK, _OK], upsert=upsert_side_effect) as mocks:
         run_sync(_TWO_ACCOUNTS, "run-1", 30)
 
-    mocks.finish_run_account.assert_any_call("run-1", "A", "isracard", "error", "db_error", 0)
+    mocks.finish_run_account.assert_any_call(
+        "run-1", "A", "isracard", "error", "db_error", 0, ANY
+    )
     mocks.finish_run_account.assert_any_call("run-1", "B", "visaCal", "success", None, 0)
     mocks.finish_run.assert_called_once_with("run-1", "partial")
 
