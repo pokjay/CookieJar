@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 
 from src.db.connection import is_mock_mode, run_query
@@ -189,35 +191,68 @@ def compute_avg_by_category(df: pd.DataFrame, year: int) -> list[dict]:
 # Subscriptions (recurring charges)
 # ---------------------------------------------------------------------------
 
-def compute_subscriptions(df: pd.DataFrame, year: int) -> list[dict]:
-    """Detect recurring charges: same processed_description, ≥10 occurrences, low std dev."""
-    year_df = df[df["year"] == year].copy()
-    if year_df.empty or "processed_description" not in year_df.columns:
+WINDOW_MONTHS = 12
+MIN_PRESENCE_RATIO = 0.6  # share of the window's months the merchant must bill in
+MIN_PRESENCE_MONTHS = 3  # too few months to call anything a habit
+# Coefficient of variation over monthly totals. Set at 0.40 rather than something
+# tighter because a committed cost whose amount *steps* — a rent increase, a plan
+# change — looks variable to a whole-window CV for as long as both levels sit in
+# the window. A doubling halfway through 12 months scores ~0.37; on real data
+# 0.40 admitted exactly one merchant that 0.35 rejected (a standing order that had
+# doubled) and nothing else, while 0.45 started letting supermarkets in.
+MAX_MONTHLY_CV = 0.40
+
+
+def compute_subscriptions(df: pd.DataFrame, year: int, month: int | None = None) -> list[dict]:
+    """Detect committed/recurring charges in the 12 months ending at (year, month).
+
+    Cadence is the signal, not raw charge count: a merchant is committed when it
+    bills in most months of the window at a stable *monthly total*. Counting
+    charges inside a calendar year instead — the previous rule — could not detect
+    a once-monthly bill until October and reset every 1 January (#162).
+
+    `month` defaults to December, making the window the calendar year, which is
+    what the year-scoped dashboard table wants.
+    """
+    if df.empty or not {"processed_description", "year", "month"} <= set(df.columns):
         return []
 
-    MIN_COUNT = 10
-    MAX_CV = 0.5  # coefficient of variation threshold
+    end = year * 12 + (month if month is not None else 12)
+    mkey = df["year"] * 12 + df["month"]
+    window = df.loc[(mkey > end - WINDOW_MONTHS) & (mkey <= end)].copy()
+    if window.empty:
+        return []
 
-    agg = (
-        year_df.groupby("processed_description")["charged_amount"]
-        .agg(["count", "mean", "std", "sum", "max"])
-        .reset_index()
+    window["_mkey"] = window["year"] * 12 + window["month"]
+    covered_months = window["_mkey"].nunique()
+    # ceil, not round: round() would accept a merchant billing in *less* than the
+    # configured share (9 covered months -> round(5.4) == 5, i.e. 56%).
+    min_months = max(MIN_PRESENCE_MONTHS, math.ceil(MIN_PRESENCE_RATIO * covered_months))
+
+    # Judge stability on monthly totals — a merchant that splits one steady bill
+    # into two uneven charges is still a steady bill.
+    monthly = window.groupby(["processed_description", "_mkey"])["charged_amount"].sum()
+    cadence = monthly.groupby(level=0).agg(["count", "mean", "std"])
+    cadence.columns = ["months_present", "avg_monthly", "std_monthly"]
+    cv = (cadence["std_monthly"] / cadence["avg_monthly"].abs()).fillna(0)
+    cadence = cadence[(cadence["months_present"] >= min_months) & (cv < MAX_MONTHLY_CV)]
+    if cadence.empty:
+        return []
+
+    charges = (
+        window[window["processed_description"].isin(cadence.index)]
+        .groupby("processed_description")["charged_amount"]
+        .agg(["count", "sum", "max"])
     )
-    agg.columns = [
-        "name", "total_charges", "avg_amount", "std_amount", "total_spend", "max_amount"
-    ]
-    # Filter: at least MIN_COUNT occurrences
-    agg = agg[agg["total_charges"] >= MIN_COUNT]
-    # Filter: low std dev relative to mean (consistent amounts)
-    cv = (agg["std_amount"] / agg["avg_amount"].abs()).fillna(0)
-    agg = agg[cv < MAX_CV]
+    charges.columns = ["total_charges", "total_spend", "max_amount"]
 
-    agg["avg_amount"] = agg["avg_amount"].round(2)
+    agg = cadence.join(charges).reset_index().rename(columns={"processed_description": "name"})
     agg["max_amount"] = agg["max_amount"].round(2)
     agg["total_spend"] = agg["total_spend"].round(2)
+    agg["avg_monthly"] = agg["avg_monthly"].round(2)
 
     return (
-        agg[["name", "max_amount", "total_charges", "total_spend"]]
+        agg[["name", "max_amount", "total_charges", "total_spend", "months_present", "avg_monthly"]]
         .sort_values("total_spend", ascending=False)
         .to_dict(orient="records")
     )

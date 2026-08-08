@@ -176,8 +176,9 @@ export function getTxnAvgByCategory(year: number): Promise<TxnAvgByCategory[]> {
   return fetchJson(`/api/transactions/dashboard/avg-by-category?year=${year}`);
 }
 
-export function getTxnSubscriptions(year: number): Promise<TxnSubscription[]> {
-  return fetchJson(`/api/transactions/dashboard/subscriptions?year=${year}`);
+export function getTxnSubscriptions(year: number, month?: number): Promise<TxnSubscription[]> {
+  const q = month === undefined ? `year=${year}` : `year=${year}&month=${month}`;
+  return fetchJson(`/api/transactions/dashboard/subscriptions?${q}`);
 }
 
 export function getTxnCategoryTrends(year: number): Promise<TxnCategoryTrend[]> {

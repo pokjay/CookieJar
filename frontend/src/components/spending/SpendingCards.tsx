@@ -31,24 +31,34 @@ export function CommittedVsChosen({
     );
   }
 
-  const largest = [...committedTxns]
-    .sort((a, b) => b.charged_amount - a.charged_amount)
+  // Both sides are merchant totals for the month — comparing a single charge
+  // against a merchant's whole previous month reads as a drop every time.
+  const currentByMerchant = new Map<string, number>();
+  for (const t of committedTxns) {
+    currentByMerchant.set(
+      t.processed_description,
+      (currentByMerchant.get(t.processed_description) ?? 0) + t.charged_amount
+    );
+  }
+
+  const largest = [...currentByMerchant.entries()]
+    .sort((a, b) => b[1] - a[1])
     .slice(0, 6)
-    .map((t) => {
-      const before = previousByMerchant.get(t.processed_description) ?? 0;
-      const unchanged = before === 0 || Math.abs(t.charged_amount - before) / Math.max(1, before) < 0.06;
+    .map(([merchant, amount]) => {
+      const before = previousByMerchant.get(merchant) ?? 0;
+      const unchanged = before === 0 || Math.abs(amount - before) / Math.max(1, before) < 0.06;
       return {
-        id: t.unique_id,
-        merchant: t.processed_description,
-        amount: t.charged_amount,
+        id: merchant,
+        merchant,
+        amount,
         note: unchanged
           ? "as usual"
-          : t.charged_amount > before
-            ? `up ${nis(t.charged_amount - before)}`
-            : `down ${nis(before - t.charged_amount)}`,
+          : amount > before
+            ? `up ${nis(amount - before)}`
+            : `down ${nis(before - amount)}`,
         noteColor: unchanged
           ? "var(--fx-ink-3)"
-          : t.charged_amount > before
+          : amount > before
             ? "var(--fx-negative)"
             : "var(--fx-positive)",
       };
