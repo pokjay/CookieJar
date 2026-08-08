@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here.
 
+## [0.13.0](https://github.com/pokjay/CookieJar/compare/v0.12.1...v0.13.0) (2026-08-08)
+
+
+### Features
+
+* **transactions:** make the long-term view interactive ([#165](https://github.com/pokjay/CookieJar/issues/165)) ([6d78d19](https://github.com/pokjay/CookieJar/commit/6d78d199234196af4f001d2718820b8eacb03403)), closes [#164](https://github.com/pokjay/CookieJar/issues/164)
+
+
+### Bug Fixes
+
+* **transactions:** detect committed charges by cadence over a rolling window ([#163](https://github.com/pokjay/CookieJar/issues/163)) ([79060d6](https://github.com/pokjay/CookieJar/commit/79060d6d423607add28e43a81322cb2b11a76f93))
+
 ## [0.12.1](https://github.com/pokjay/CookieJar/compare/v0.12.0...v0.12.1) (2026-08-07)
 
 
