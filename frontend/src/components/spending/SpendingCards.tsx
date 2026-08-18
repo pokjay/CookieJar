@@ -1,7 +1,7 @@
 "use client";
 
 import { Card } from "@/components/ledger/ui";
-import { categoryColor, dayLabel, nis, pct } from "@/components/ledger/format";
+import { categoryColor, nis, pct } from "@/components/ledger/format";
 import type { Transaction } from "@/lib/types";
 import type { SpendingModel } from "./model";
 import { keyToYearMonth } from "./model";
@@ -122,7 +122,7 @@ export function CommittedVsChosen({
   );
 }
 
-export function TopPurchases({
+export function TopBusinesses({
   transactions,
   monthKey: key,
 }: {
@@ -130,37 +130,55 @@ export function TopPurchases({
   monthKey: number;
 }) {
   const { year, month } = keyToYearMonth(key);
-  const top = [...transactions].sort((a, b) => b.charged_amount - a.charged_amount).slice(0, 5);
+
+  const byMerchant = new Map<
+    string,
+    { name: string; total: number; count: number; category: string | null; subcategory: string | null }
+  >();
+  for (const t of transactions) {
+    const existing = byMerchant.get(t.processed_description);
+    if (existing) {
+      existing.total += t.charged_amount;
+      existing.count += 1;
+    } else {
+      byMerchant.set(t.processed_description, {
+        name: t.processed_description,
+        total: t.charged_amount,
+        count: 1,
+        category: t.category,
+        subcategory: t.subcategory,
+      });
+    }
+  }
+  const top = [...byMerchant.values()].sort((a, b) => b.total - a.total).slice(0, 5);
 
   return (
     <Card className="min-w-0 flex-1 basis-[300px]">
-      <div className="mb-[3px] text-[12.5px] font-semibold">5 biggest purchases</div>
+      <div className="mb-[3px] text-[12.5px] font-semibold">Top 5 businesses</div>
       <p className="mb-[15px] text-[11.5px] text-fx-ink-3">
-        Single largest charges in {new Date(year, month).toLocaleString("en-US", { month: "long", year: "numeric" })}
+        Highest total spend by business in {new Date(year, month).toLocaleString("en-US", { month: "long", year: "numeric" })}
       </p>
       <div className="flex flex-col gap-[11px]">
-        {top.map((t, i) => (
-          <div key={t.unique_id} className="flex items-center gap-[11px]">
+        {top.map((b, i) => (
+          <div key={b.name} className="flex items-center gap-[11px]">
             <span className="w-3 flex-none font-fx-mono text-[11px] font-medium leading-none text-fx-ink-3">
               {i + 1}
             </span>
             <span
               className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-[9px] bg-fx-surface-2 text-[12.5px] font-semibold"
-              style={{ color: categoryColor(t.category) }}
+              style={{ color: categoryColor(b.category) }}
             >
-              {t.processed_description.charAt(0)}
+              {b.name.charAt(0)}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[12.5px] font-semibold">
-                {t.processed_description}
-              </span>
+              <span className="block truncate text-[12.5px] font-semibold">{b.name}</span>
               <span className="mt-[3px] block text-[11px] text-fx-ink-3">
-                {t.category ? `${t.category}${t.subcategory ? ` · ${t.subcategory}` : ""}` : "uncategorised"}
+                {b.category ? `${b.category}${b.subcategory ? ` · ${b.subcategory}` : ""}` : "uncategorised"}
                 {" · "}
-                {dayLabel(year, month, Number(t.activity_date.slice(8, 10)))}
+                {b.count} purchase{b.count === 1 ? "" : "s"}
               </span>
             </span>
-            <span className="fx-num flex-none text-[17px]">{nis(t.charged_amount)}</span>
+            <span className="fx-num flex-none text-[17px]">{nis(b.total)}</span>
           </div>
         ))}
       </div>

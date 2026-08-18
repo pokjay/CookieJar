@@ -23,7 +23,7 @@ import {
   CommittedVsChosen,
   DataHealthBanner,
   StoryLine,
-  TopPurchases,
+  TopBusinesses,
 } from "@/components/spending/SpendingCards";
 import {
   buildSpendingModel,
@@ -187,7 +187,7 @@ function Spending() {
             committed={committed}
             previousTransactions={prevTxns}
           />
-          <TopPurchases transactions={monthTxns} monthKey={monthKey} />
+          <TopBusinesses transactions={monthTxns} monthKey={monthKey} />
         </div>
 
         <CategoryTable
