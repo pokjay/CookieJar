@@ -1,8 +1,18 @@
 """Unit tests for the manual-transactions cash-flow derivation.
 
-Pins the sign convention: derived income/expense/savings/money_transferred are
-positive magnitudes, matching the monthly_cash_flow table and mock data. There
-used to be a second, divergent copy of this logic in backend/data.py that
+Pins the sign convention:
+
+* income / expense / money_transferred are positive magnitudes, matching the
+  monthly_cash_flow table and mock data — the direction is already in the
+  column name;
+* savings is SIGNED, because it runs both ways and the name doesn't say which:
+  positive = the balance grew, negative = it shrank (#153).
+
+Rows sit on the bank account, so savings follows the same convention as every
+other intent (_INTENT_SIGN): positive charged_amount = money leaving that
+account, and money leaving checking is money arriving in savings.
+
+There used to be a second, divergent copy of this logic in backend/data.py that
 negated savings — these tests guard the single consolidated implementation.
 """
 
@@ -35,12 +45,12 @@ def _derive(rows, sign_flipped=None):
         )
 
 
-def test_all_columns_are_positive_magnitudes():
+def test_income_expense_and_transfers_are_positive_magnitudes():
     result = _derive(
         [
             ("Leumi", "2025-03-01", -18000.0, "salary"),
             ("Leumi", "2025-03-05", 4200.0, "expense"),
-            ("Leumi", "2025-03-10", -3000.0, "savings"),
+            ("Leumi", "2025-03-10", 3000.0, "savings"),
             ("Leumi", "2025-03-15", 500.0, "internal_transfer"),
         ]
     )
@@ -54,10 +64,36 @@ def test_all_columns_are_positive_magnitudes():
     assert row["money_transferred"] == 500.0
 
 
-def test_savings_sign_is_positive_regardless_of_input_sign():
-    for amount in (-3000.0, 3000.0):
-        result = _derive([("Leumi", "2025-03-10", amount, "savings")])
-        assert result.iloc[0]["savings"] == 3000.0
+def test_savings_keeps_its_direction():
+    """The #153 regression: taking the magnitude here made a withdrawal
+    indistinguishable from a contribution, so a month the household drew its
+    savings DOWN rendered as a month it saved."""
+    contribution = _derive([("Leumi", "2025-03-10", 3000.0, "savings")])
+    withdrawal = _derive([("Leumi", "2025-03-10", -3000.0, "savings")])
+
+    assert contribution.iloc[0]["savings"] == 3000.0
+    assert withdrawal.iloc[0]["savings"] == -3000.0
+
+
+def test_savings_contributions_and_withdrawals_net_out_within_a_month():
+    """Two opposite moves in one month are a small net change, not a big one —
+    summing magnitudes would report 8000 of saving for a net 2000."""
+    result = _derive(
+        [
+            ("Leumi", "2025-03-02", 5000.0, "savings"),
+            ("Leumi", "2025-03-20", -3000.0, "savings"),
+        ]
+    )
+    assert result.iloc[0]["savings"] == 2000.0
+
+
+def test_a_transfer_out_of_savings_is_not_income():
+    """A withdrawal must not leak into income/expense — it is neither."""
+    result = _derive([("Leumi", "2025-03-10", -3000.0, "savings")])
+    row = result.iloc[0]
+    assert row["income"] == 0.0
+    assert row["expense"] == 0.0
+    assert row["money_transferred"] == 0.0
 
 
 def test_sign_flipped_accounts_do_not_change_magnitudes():

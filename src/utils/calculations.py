@@ -308,8 +308,24 @@ def prepare_sankey_data(
     subcat_totals = expenses.groupby(["category", "subcategory"])["charged_amount"].sum()
 
     # Sort categories by value descending (largest first)
-    savings_value = abs(total_savings)
     category_names = cat_totals.sort_values(ascending=False).index.tolist()
+
+    # A net contribution and a net withdrawal are opposite events and must not
+    # collapse into the same picture (#153). Taking abs() here — as this used
+    # to — drew "Income → Savings" for a month the household actually drew
+    # savings DOWN to fund its spending.
+    #
+    # A withdrawal is a SOURCE of funds, so it flows into Income rather than out
+    # of it, which also makes the diagram balance: without it, a month whose
+    # expenses exceeded its income showed category widths summing to more than
+    # the Income node they came from.
+    savings_value = abs(total_savings)
+    savings_is_withdrawal = total_savings < 0
+
+    # The withdrawal case gains a layer in front of Income, so every downstream
+    # node shifts one to the right. Nothing keys off the absolute numbers except
+    # the ordering they impose.
+    base_depth = 1 if savings_is_withdrawal and savings_value > 0 else 0
 
     # Determine which categories are expandable (>1 subcategory),
     # preserving the value-sorted order
@@ -321,30 +337,40 @@ def prepare_sankey_data(
                 expandable.append(cat)
 
     # --- Build nodes with depth ---
-    # depth 0: Income, depth 1: categories + savings, depth 2: subcategories
-    nodes: list[dict] = [{"name": "Income", "depth": 0}]
+    # Contribution: Income(0) → categories(1) + Savings(1) → subcategories(2)
+    # Withdrawal:   Savings(0) → Income(1) → categories(2) → subcategories(3)
+    nodes: list[dict] = []
+
+    if savings_value > 0 and savings_is_withdrawal:
+        nodes.append({"name": "Savings", "depth": 0})
+
+    nodes.append({"name": "Income", "depth": base_depth})
 
     # Categories sorted by value (largest first) — interleave subcategories
     # right after their parent so ECharts places them adjacently
     for cat in category_names:
-        nodes.append({"name": cat, "depth": 1})
+        nodes.append({"name": cat, "depth": base_depth + 1})
         if cat in expanded and cat in expandable:
             cat_subs = subcat_totals.loc[cat].sort_values(ascending=False)
             for sub in cat_subs.index.tolist():
-                nodes.append({"name": f"{cat} — {sub}", "depth": 2})
+                nodes.append({"name": f"{cat} — {sub}", "depth": base_depth + 2})
 
-    if savings_value > 0:
-        nodes.append({"name": "Savings", "depth": 1})
+    if savings_value > 0 and not savings_is_withdrawal:
+        nodes.append({"name": "Savings", "depth": base_depth + 1})
 
     # --- Build links ---
     links: list[dict] = []
+
+    # Savings → Income: money drawn out of savings is funding this year's spend
+    if savings_value > 0 and savings_is_withdrawal:
+        links.append({"source": "Savings", "target": "Income", "value": round(savings_value, 0)})
 
     # Income → each category (in value-sorted order)
     for cat in category_names:
         links.append({"source": "Income", "target": cat, "value": round(cat_totals[cat], 0)})
 
-    # Income → Savings
-    if savings_value > 0:
+    # Income → Savings: what was kept rather than spent
+    if savings_value > 0 and not savings_is_withdrawal:
         links.append({"source": "Income", "target": "Savings", "value": round(savings_value, 0)})
 
     # Category → subcategories (only for expanded categories)

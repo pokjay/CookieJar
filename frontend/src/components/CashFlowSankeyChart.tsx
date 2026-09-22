@@ -23,12 +23,15 @@ function buildOptions(
   const nodeColors: Record<string, string> = {};
   let catIdx = 0;
   for (const node of data.nodes) {
-    const { name, depth } = node;
+    const { name } = node;
     if (name === "Income") {
       nodeColors[name] = "#2ecc71";
     } else if (name === "Savings") {
       nodeColors[name] = "#3498db";
-    } else if (depth === 2) {
+      // Subcategories are identified by their "Category — Sub" name, not by
+      // depth: a net savings withdrawal puts Savings in front of Income and
+      // shifts every downstream node one layer right (#153).
+    } else if (name.includes(" — ")) {
       const parent = name.split(" — ")[0];
       nodeColors[name] = nodeColors[parent] ?? "#999999";
     } else {

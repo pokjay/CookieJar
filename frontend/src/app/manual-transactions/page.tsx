@@ -502,6 +502,12 @@ function ManualEntryTab({ meta }: { meta: Meta }) {
             >
               {meta.cash_flow_types.map((t) => <option key={t}>{t}</option>)}
             </select>
+            {form.cash_flow_type === "savings" && (
+              <p className="text-xs text-cj-text-faint">
+                Signed from this account&apos;s side: <strong>positive</strong> = money moved
+                into savings, <strong>negative</strong> = money taken out.
+              </p>
+            )}
           </Field>
         </div>
 
@@ -866,7 +872,8 @@ function CsvImportTab({ meta }: { meta: Meta }) {
         </p>
         <p className="text-xs text-cj-text-faint">
           <code className="text-cj-text-muted">charged_amount</code> defaults to <code className="text-cj-text-muted">original_amount</code> when blank.{" "}
-          <code className="text-cj-text-muted">cash_flow_type</code> values: {meta.cash_flow_types.join(", ")} (defaults to <em>expense</em>).
+          <code className="text-cj-text-muted">cash_flow_type</code> values: {meta.cash_flow_types.join(", ")} (defaults to <em>expense</em>).{" "}
+          For <code className="text-cj-text-muted">savings</code>, the sign is read from this account&apos;s side: positive = money moved into savings, negative = money taken out.
         </p>
       </div>
 
