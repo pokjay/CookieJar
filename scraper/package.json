@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "express": "^4.19.2",
-    "israeli-bank-scrapers": "^6.9.0"
+    "israeli-bank-scrapers": "^6.12.1"
   },
   "engines": {
     "node": ">=20"
