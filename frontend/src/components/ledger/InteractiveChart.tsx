@@ -21,6 +21,7 @@ export default function InteractiveChart({
   tooltipTitle,
   tooltipRows,
   markerSeries = 0,
+  markerColor = "var(--fx-accent)",
   ariaLabel,
 }: {
   series: ChartSeries[];
@@ -33,6 +34,7 @@ export default function InteractiveChart({
   tooltipRows: (index: number) => TooltipRow[];
   /** Which series the dot rides on. */
   markerSeries?: number;
+  markerColor?: string;
   ariaLabel?: string;
 }) {
   const [hover, setHover] = useState<number | null>(null);
@@ -50,6 +52,8 @@ export default function InteractiveChart({
 
   const hoverPct = hover === null || pointCount < 2 ? 0 : (hover / (pointCount - 1)) * 100;
   const marker = series[markerSeries];
+  // The shared gradient takes the colour of the series it fills.
+  const gradientColor = series.find((s) => s.fill)?.color ?? "var(--fx-accent)";
   const markerValue = hover !== null && marker ? marker.values[hover] : undefined;
   const markerTop =
     markerValue === undefined ? 0 : (yAt(markerValue, min, max, 300, 14) / 300) * height;
@@ -75,8 +79,8 @@ export default function InteractiveChart({
       >
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="var(--fx-accent)" stopOpacity="0.3" />
-            <stop offset="1" stopColor="var(--fx-accent)" stopOpacity="0" />
+            <stop offset="0" stopColor={gradientColor} stopOpacity="0.3" />
+            <stop offset="1" stopColor={gradientColor} stopOpacity="0" />
           </linearGradient>
         </defs>
         {GRID_FRACTIONS.map((f) => (
@@ -134,8 +138,8 @@ export default function InteractiveChart({
           />
           {markerValue !== undefined && (
             <div
-              className="pointer-events-none absolute h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-fx-accent"
-              style={{ left: `${hoverPct}%`, top: markerTop }}
+              className="pointer-events-none absolute h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full"
+              style={{ left: `${hoverPct}%`, top: markerTop, background: markerColor }}
             />
           )}
           <div

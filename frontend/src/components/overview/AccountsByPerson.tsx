@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { Sparkline, StatTile } from "@/components/ledger/ui";
-import { linePath, areaPath, paddedExtent } from "@/components/ledger/paths";
+import InteractiveChart from "@/components/ledger/InteractiveChart";
+import AxisTicks from "@/components/ledger/AxisTicks";
+import { paddedExtent } from "@/components/ledger/paths";
 import { monthLabelShort, nis, nisShort, pct, signColor } from "@/components/ledger/format";
 import { keyToYearMonth } from "@/components/spending/model";
 import { groupByCategory, type AccountSeries, type AccountsData } from "./accounts";
@@ -69,6 +71,10 @@ export default function AccountsByPerson({
 
   const netWorth = data.total[data.total.length - 1] ?? 0;
   const last = data.monthKeys.length - 1;
+  const labels = data.monthKeys.slice(start).map((k) => {
+    const { year, month } = keyToYearMonth(k);
+    return monthLabelShort(year, month);
+  });
 
   return (
     <div className="flex flex-col gap-[11px]">
@@ -133,10 +139,8 @@ export default function AccountsByPerson({
                   row.category === "Bank Account" || row.category === "Rainy Day Fund"
                     ? "var(--fx-accent)"
                     : "var(--fx-s2)";
+                const startBalance = row.values[start] ?? 0;
                 const [lo, hi] = paddedExtent(window, 0.1);
-                const from = keyToYearMonth(data.monthKeys[start] ?? 0);
-                const to = keyToYearMonth(data.monthKeys[last] ?? 0);
-                const gradientId = `acct-${row.key.replace(/\W+/g, "-")}`;
 
                 return (
                   <div key={row.key} className="border-t border-fx-line-2">
@@ -197,38 +201,47 @@ export default function AccountsByPerson({
                             label={`Change · ${rangeLabel}`}
                             value={nisShort(rangeChange)}
                             color={signColor(rangeChange)}
+                            sub={`from ${nisShort(startBalance)} · ${labels[0] ?? ""}`}
                           />
                           <StatTile
                             label="Share of net worth"
                             value={pct((row.balance / (netWorth || 1)) * 100).replace("+", "")}
                           />
                         </div>
-                        <svg
-                          viewBox="0 0 1000 220"
-                          preserveAspectRatio="none"
-                          aria-label={`${row.title} balance history`}
-                          className="block h-[140px] w-full"
-                        >
-                          <defs>
-                            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0" stopColor={accentColor} stopOpacity="0.25" />
-                              <stop offset="1" stopColor={accentColor} stopOpacity="0" />
-                            </linearGradient>
-                          </defs>
-                          <path d={areaPath(window, lo, hi, 220, 12)} fill={`url(#${gradientId})`} />
-                          <path
-                            d={linePath(window, lo, hi, 220, 12)}
-                            fill="none"
-                            stroke={accentColor}
-                            strokeWidth="2"
-                            strokeLinejoin="round"
-                            vectorEffect="non-scaling-stroke"
+                        <div data-testid={`account-row-${row.key}-chart`}>
+                          <InteractiveChart
+                            series={[
+                              {
+                                label: row.title,
+                                values: window,
+                                color: accentColor,
+                                width: 2,
+                                fill: true,
+                              },
+                            ]}
+                            height={140}
+                            min={lo}
+                            max={hi}
+                            pointCount={window.length}
+                            markerColor={accentColor}
+                            ariaLabel={`${row.title} balance history`}
+                            tooltipTitle={(i) => labels[i]}
+                            tooltipRows={(i) => {
+                              // Compare against the month before, even when that
+                              // month sits just outside the selected range.
+                              const prev = row.values[start + i - 1];
+                              return [
+                                { label: "Balance", value: nis(window[i]), color: accentColor },
+                                {
+                                  label: "Change on month",
+                                  value: prev === undefined ? "—" : nisShort(window[i] - prev),
+                                  color: "transparent",
+                                },
+                              ];
+                            }}
                           />
-                        </svg>
-                        <div className="mt-[7px] flex justify-between font-fx-mono text-[10px] leading-none text-fx-ink-3">
-                          <span>{monthLabelShort(from.year, from.month)}</span>
-                          <span>{monthLabelShort(to.year, to.month)}</span>
                         </div>
+                        <AxisTicks labels={labels} target={compact ? 4 : 6} className="mt-[7px]" />
                       </div>
                     )}
                   </div>

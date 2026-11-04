@@ -70,6 +70,24 @@ test.describe("Overview page", () => {
         page.getByTestId(/^account-row-Morticia::acct-/).filter({ hasText: "Pension · " }).first()
       ).toBeVisible();
     });
+
+    test("expanded row shows the range's starting balance", async ({ page }) => {
+      await page.getByTestId("account-group-Morticia").click();
+      const row = page.getByTestId("account-row-Morticia::Pension");
+      await row.click();
+      await expect(row.locator("..").getByText(/^from ₪/)).toBeVisible();
+    });
+
+    test("hovering the expanded chart shows that month's balance", async ({ page }) => {
+      await page.getByTestId("account-group-Morticia").click();
+      await page.getByTestId("account-row-Morticia::Pension").click();
+      const chart = page.getByTestId("account-row-Morticia::Pension-chart");
+      const box = await chart.boundingBox();
+      if (!box) throw new Error("chart not rendered");
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await expect(chart.getByText("Balance", { exact: true })).toBeVisible();
+      await expect(chart.getByText("Change on month", { exact: true })).toBeVisible();
+    });
   });
 
   test.describe("Cash flow ledger", () => {
