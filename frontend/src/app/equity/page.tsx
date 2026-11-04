@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { Plus, Trash2, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { Plus, Trash2, CheckCircle2, AlertCircle, Loader2, ChevronDown } from "lucide-react";
 import {
   createEquityGrant,
   deleteEquityGrant,
@@ -11,50 +11,94 @@ import {
 import type { EquityGrant, EquityGrantPayload } from "@/lib/types";
 import { Card, SectionHeader, SegmentedControl, StatTile } from "@/components/ledger/ui";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { PriceValueChart, VestingTimelineChart } from "@/components/equity/EquityCharts";
 import {
-  computeTotals,
+  ChartLegend,
+  DataTable,
+  ExitGrid,
+  ExitScenariosChart,
+  HistoryChart,
+  VestingAheadChart,
+  type HistoryPath,
+} from "@/components/equity/EquityCharts";
+import {
+  FMV_MODES,
+  SCENARIO_COLORS,
+  SCENARIO_MULTIPLES,
+  addMonths,
+  decisionNumbers,
+  exitGrid,
+  exitScenarios,
+  fmvAt,
   grantColor,
+  grantEnd,
+  grantKey,
+  growthModel,
+  historyData,
+  lastVestEnd,
   latest409a,
-  priceCurve,
+  money2,
+  monthYear,
+  monthlyGains,
+  parseDate,
+  payoutAt,
+  pct,
+  rateAt,
   spread,
   toISODate,
   usd,
   vestedFraction,
-  vestingTimeline,
+  yearlyVesting,
+  type FmvMode,
 } from "@/components/equity/model";
 
-// The assumed price and chart range are "play with it" inputs, so they live in
-// this browser only. The grants are stored in the database, and the 409A is
-// derived from them (the latest grant's strike).
+// The exit price, earliest exit, 409A path and view toggles are "play with it"
+// inputs, so they live in this browser only. Grants are stored in the database;
+// today's 409A is derived from them (the latest grant's strike).
 const EXPLORER_KEY = "equity-explorer-v1";
 
-type Mode = "all" | "vested";
+type VestView = "monthly" | "yearly";
 
 interface Explorer {
   price: number;
-  max: number;
-  mode: Mode;
+  earliest: string;
+  fmvMode: FmvMode;
+  vestView: VestView;
+  gridOpen: boolean;
 }
 
-const DEFAULT_EXPLORER: Explorer = { price: 60, max: 150, mode: "all" };
+const defaultExplorer = (today: Date): Explorer => ({
+  price: 60,
+  // No exit is expected within the next year.
+  earliest: toISODate(addMonths(today, 12)),
+  fmvMode: "slow",
+  vestView: "monthly",
+  gridOpen: false,
+});
 
-function loadExplorer(): Explorer {
+function loadExplorer(today: Date): Explorer {
+  const d = defaultExplorer(today);
   try {
     const raw = localStorage.getItem(EXPLORER_KEY);
-    if (raw) {
-      const s = JSON.parse(raw);
-      return {
-        price: typeof s.price === "number" ? s.price : DEFAULT_EXPLORER.price,
-        max: typeof s.max === "number" ? s.max : DEFAULT_EXPLORER.max,
-        mode: s.mode === "vested" ? "vested" : "all",
-      };
-    }
+    if (!raw) return d;
+    const s = JSON.parse(raw);
+    return {
+      price: typeof s.price === "number" && s.price >= 0 ? s.price : d.price,
+      earliest: typeof s.earliest === "string" && parseDate(s.earliest) ? s.earliest : d.earliest,
+      fmvMode: FMV_MODES.includes(s.fmvMode) ? s.fmvMode : d.fmvMode,
+      vestView: s.vestView === "yearly" ? "yearly" : "monthly",
+      gridOpen: s.gridOpen === true,
+    };
   } catch {
     // private mode / blocked storage: fall back to defaults
+    return d;
   }
-  return DEFAULT_EXPLORER;
 }
+
+const MODE_TEXT: Record<FmvMode, string> = {
+  flat: "Stays at today’s",
+  slow: "Growth keeps slowing",
+  recent: "Holds the recent rate",
+};
 
 /** Keep values the backend accepts (it rejects negatives and zero-year vesting). */
 function sanitize(g: EquityGrant): EquityGrantPayload {
@@ -73,9 +117,19 @@ const samePayload = (a: EquityGrantPayload, b: EquityGrantPayload) =>
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
-const INPUT =
-  "w-full min-w-0 rounded-[8px] border border-fx-line bg-fx-surface-2 px-2 py-1.5 text-[13px] text-fx-ink " +
+const INPUT_BASE =
+  "min-w-0 rounded-[8px] border border-fx-line bg-fx-surface-2 px-2 py-1.5 text-[13px] text-fx-ink " +
   "focus:border-fx-accent focus:outline-none focus:ring-2 focus:ring-fx-accent-soft";
+const INPUT = `w-full ${INPUT_BASE}`;
+
+/** A plain-language reading of a chart, with the key figures in bold. */
+function Read({ children }: { children: ReactNode }) {
+  return <p className="mt-3 max-w-[80ch] text-[12.5px] text-fx-ink [&_b]:font-semibold">{children}</p>;
+}
+
+function Caption({ children }: { children: ReactNode }) {
+  return <p className="-mt-1 mb-3 text-[12px] text-fx-ink-3">{children}</p>;
+}
 
 // ── Grant row ────────────────────────────────────────────────────────────────
 
@@ -94,6 +148,7 @@ function GrantRow({
   grant,
   index,
   price,
+  fmvToday,
   today,
   autoFocus,
   onLiveChange,
@@ -103,6 +158,7 @@ function GrantRow({
   grant: EquityGrant;
   index: number;
   price: number;
+  fmvToday: number;
   today: Date;
   autoFocus: boolean;
   onLiveChange: (g: EquityGrant) => void;
@@ -172,7 +228,7 @@ function GrantRow({
         <input type="number" min={0} step={1} aria-label={`${label} cliff months`} className={`${INPUT} fx-num`} value={draft.cliff_months} onChange={set("cliff_months")} onBlur={commit} />
       </td>
       <td className={`${cell} fx-num text-right text-[13px]`}>{Math.round(f * 100)}%</td>
-      <td className={`${cell} fx-num text-right text-[13px]`}>{usd(spread(grant, price) * f)}</td>
+      <td className={`${cell} fx-num text-right text-[13px]`}>{usd(spread(grant, fmvToday) * f)}</td>
       <td className={`${cell} fx-num text-right text-[13px]`}>{usd(spread(grant, price))}</td>
       <td className={`${cell} text-right`}>
         <button
@@ -191,10 +247,15 @@ function GrantRow({
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function EquityPage() {
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
   const [grants, setGrants] = useState<EquityGrant[]>([]);
   const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [explorer, setExplorer] = useState<Explorer>(DEFAULT_EXPLORER);
+  const [explorer, setExplorer] = useState<Explorer>(() => defaultExplorer(today));
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [pendingDelete, setPendingDelete] = useState<EquityGrant | null>(null);
   const [focusId, setFocusId] = useState<number | null>(null);
@@ -202,10 +263,8 @@ export default function EquityPage() {
   // What the server last confirmed, so blurring an unchanged field is a no-op.
   const saved = useRef<Map<number, EquityGrantPayload>>(new Map());
 
-  const today = useMemo(() => new Date(), []);
-
   useEffect(() => {
-    setExplorer(loadExplorer());
+    setExplorer(loadExplorer(today));
     getEquityGrants()
       .then((data) => {
         setGrants(data);
@@ -213,7 +272,7 @@ export default function EquityPage() {
       })
       .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
-  }, []);
+  }, [today]);
 
   const updateExplorer = useCallback((patch: Partial<Explorer>) => {
     setExplorer((prev) => {
@@ -227,12 +286,7 @@ export default function EquityPage() {
     });
   }, []);
 
-  const setPrice = (v: number) => {
-    const price = Math.max(0, Number.isFinite(v) ? v : 0);
-    updateExplorer(
-      price > explorer.max ? { price, max: Math.ceil(price / 10) * 10 } : { price },
-    );
-  };
+  const setPrice = (v: number) => updateExplorer({ price: Math.max(0, Number.isFinite(v) ? v : 0) });
 
   const replaceGrant = (g: EquityGrant) =>
     setGrants((prev) => prev.map((x) => (x.id === g.id ? g : x)));
@@ -261,7 +315,7 @@ export default function EquityPage() {
         grant_date: toISODate(today),
         shares: 1000,
         // A new grant is priced at the current 409A, which is the latest strike.
-        strike: fmv || 10,
+        strike: f0 || 10,
         vesting_years: 4,
         cliff_months: 12,
       });
@@ -291,18 +345,40 @@ export default function EquityPage() {
     }
   }
 
-  const { price, max, mode } = explorer;
+  // ── Derived figures ───────────────────────────────────────────────────────
+  const { price, fmvMode, vestView, gridOpen } = explorer;
+  const earliestIso = explorer.earliest;
+  const earliest = useMemo(() => parseDate(earliestIso) ?? addMonths(today, 12), [earliestIso, today]);
   const fmvSource = latest409a(grants);
-  const fmv = fmvSource?.price ?? 0;
-  const totals = useMemo(() => computeTotals(grants, price, today), [grants, price, today]);
-  const curve = useMemo(
-    () => priceCurve(grants, max, mode === "vested", today),
-    [grants, max, mode, today],
-  );
-  const timeline = useMemo(() => vestingTimeline(grants, price), [grants, price]);
-  const todayLabel = timeline.find((r) => r.t >= today.getTime())?.label ?? null;
+  const f0 = fmvSource?.price ?? 0;
+  const growth = useMemo(() => growthModel(grants), [grants]);
+  const fmvOf = useCallback((mode: FmvMode, at: Date) => fmvAt(f0, growth, mode, at, today), [f0, growth, today]);
+  const fmv = useCallback((at: Date) => fmvOf(fmvMode, at), [fmvOf, fmvMode]);
 
-  const chips = fmv > 0 ? ([["409A", fmv], ["2×", fmv * 2], ["3×", fmv * 3], ["5×", fmv * 5]] as const) : [];
+  const decision = useMemo(() => decisionNumbers(grants, price, fmv, today), [grants, price, fmv, today]);
+  const scenarios = useMemo(() => (f0 > 0 ? exitScenarios(grants, f0, earliest, today) : null), [grants, f0, earliest, today]);
+  const grid = useMemo(() => (f0 > 0 ? exitGrid(grants, price, f0, earliest) : null), [grants, price, f0, earliest]);
+  const monthly = useMemo(() => monthlyGains(grants, price, fmv, today), [grants, price, fmv, today]);
+  const yearly = useMemo(() => yearlyVesting(grants, price, today), [grants, price, today]);
+  const lv = lastVestEnd(grants);
+  const lvTime = lv?.getTime() ?? 0;
+  const historyEnd = useMemo(() => new Date(Math.max(addMonths(today, 36).getTime(), lvTime)), [today, lvTime]);
+  const history = useMemo(
+    () => (growth.intervals.length ? historyData(growth, f0, fmvOf, today, historyEnd) : []),
+    [growth, f0, fmvOf, today, historyEnd],
+  );
+
+  const maxPrice = Math.max(150, Math.ceil(f0) * 10, Math.ceil(price / 10) * 10);
+  const chips = f0 > 0 ? SCENARIO_MULTIPLES.map((k) => [k === 1 ? "409A" : `${k}×`, f0 * k] as const) : [];
+  const slowNow = rateAt(growth, "slow", today, today);
+  const modeOption = (m: FmvMode) =>
+    m === "flat"
+      ? MODE_TEXT.flat
+      : m === "recent"
+        ? `${MODE_TEXT.recent} (${pct(growth.recent)}/yr)`
+        : growth.decay < 0
+          ? `${MODE_TEXT.slow} (${pct(slowNow)} now, easing)`
+          : MODE_TEXT.slow;
 
   if (loading) {
     return (
@@ -312,14 +388,18 @@ export default function EquityPage() {
     );
   }
 
+  const grantLegend = grants.map((g, i) => ({ label: `${g.name || "Grant"} · ${money2(g.strike || 0)}`, color: grantColor(i) }));
+  const in3y = addMonths(today, 36);
+
   return (
     <div className="fx min-h-screen">
       <div className="mx-auto flex max-w-[1200px] flex-col gap-[22px] px-5 py-5 pb-8">
         <div>
           <h1 className="text-[19px] font-semibold tracking-[-0.02em]">Equity</h1>
-          <p className="mt-[5px] max-w-[68ch] text-[12.5px] text-fx-ink-3">
-            What your equity appreciation rights pay out at a share price you pick — shares × (price −
-            strike), in US dollars, before tax. For exploring only: not counted in net worth.
+          <p className="mt-[5px] max-w-[72ch] text-[12.5px] text-fx-ink-3">
+            What your equity appreciation rights could pay, in US dollars, before tax. An exit pays vested units ×
+            (exit price − strike); if you leave first, vested units are bought out at the 409A of that day. Unvested
+            units are forfeited. For exploring only: not counted in net worth.
           </p>
         </div>
 
@@ -329,30 +409,35 @@ export default function EquityPage() {
           </Card>
         )}
 
-        {/* Assumed price */}
+        {/* Assumptions */}
         <Card>
-          <div className="grid gap-6 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] md:items-center">
+          <div className="grid gap-6 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] md:items-center">
             <div>
-              <SectionHeader label="ASSUMED PRICE PER SHARE" />
+              <SectionHeader label="EXIT PRICE PER SHARE" />
               <div className="flex flex-wrap items-baseline gap-2.5">
-                <span className="fx-num text-[38px] leading-none">${price.toFixed(2)}</span>
-                {fmv > 0 && (
-                  <span className="fx-num text-[12px] text-fx-ink-3">{(price / fmv).toFixed(1)}× latest 409A</span>
-                )}
+                <span className="fx-num text-[38px] leading-none">{money2(price)}</span>
+                {f0 > 0 && <span className="fx-num text-[12px] text-fx-ink-3">{(price / f0).toFixed(1)}× today&rsquo;s 409A</span>}
               </div>
-              <input
-                type="range"
-                min={0}
-                max={max}
-                step={0.5}
-                value={price}
-                onChange={(e) => setPrice(parseFloat(e.target.value))}
-                aria-label="Assumed price per share"
-                className="mt-4 w-full accent-[var(--fx-accent)]"
-              />
-              <div className="fx-num flex justify-between text-[11px] text-fx-ink-3">
-                <span>$0</span>
-                <span>${max}</span>
+              <div className="mt-4 flex items-center gap-3">
+                <input
+                  type="range"
+                  min={0}
+                  max={maxPrice}
+                  step={0.5}
+                  value={price}
+                  onChange={(e) => setPrice(parseFloat(e.target.value))}
+                  aria-label="Exit price per share"
+                  className="min-w-0 flex-1 accent-[var(--fx-accent)]"
+                />
+                <input
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  aria-label="Exit price"
+                  className={`${INPUT_BASE} fx-num w-[92px] flex-none`}
+                  value={price}
+                  onChange={(e) => setPrice(parseFloat(e.target.value))}
+                />
               </div>
               {chips.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1.5">
@@ -363,122 +448,219 @@ export default function EquityPage() {
                       onClick={() => setPrice(+v.toFixed(2))}
                       className="rounded-full border border-fx-line px-3 py-1 font-fx-mono text-[11.5px] text-fx-ink-2 transition-colors hover:border-fx-accent hover:text-fx-accent"
                     >
-                      {label} · ${v.toFixed(2)}
+                      {label} · {money2(v)}
                     </button>
                   ))}
                 </div>
               )}
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="grid gap-1">
-                <span className="text-[10.5px] text-fx-ink-3">Price</span>
+                <span className="text-[10.5px] text-fx-ink-3">Earliest exit</span>
                 <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  className={`${INPUT} fx-num`}
-                  value={price}
-                  onChange={(e) => setPrice(parseFloat(e.target.value))}
+                  type="date"
+                  className={INPUT}
+                  value={earliestIso}
+                  onChange={(e) => {
+                    if (parseDate(e.target.value)) updateExplorer({ earliest: e.target.value });
+                  }}
                 />
               </label>
               <div className="grid gap-1">
-                <span className="text-[10.5px] text-fx-ink-3">Latest 409A</span>
+                <span className="text-[10.5px] text-fx-ink-3">Today&rsquo;s 409A</span>
                 <span
-                  className="fx-num rounded-[8px] border border-transparent px-2 py-1.5 text-[13px]"
-                  title="The strike of your most recent grant — grants are priced at the 409A of their grant date"
+                  className="fx-num px-0.5 py-1.5 text-[13px]"
+                  title="The strike of your most recent grant: grants are priced at the 409A of their grant date"
                 >
-                  {fmvSource ? `$${fmv.toFixed(2)}` : "—"}
-                </span>
-                <span className="truncate text-[10.5px] text-fx-ink-3">
-                  {fmvSource ? `from ${fmvSource.grant.name || "latest grant"}` : "add a dated grant"}
+                  {fmvSource ? money2(f0) : "—"}
+                  <span className="ml-2 font-[inherit] text-[10.5px] text-fx-ink-3">
+                    {fmvSource ? `from ${fmvSource.grant.name || "latest grant"}` : "add a dated grant"}
+                  </span>
                 </span>
               </div>
-              <label className="grid gap-1">
-                <span className="text-[10.5px] text-fx-ink-3">Chart up to</span>
-                <input
-                  type="number"
-                  min={5}
-                  step={5}
-                  className={`${INPUT} fx-num`}
-                  value={max}
-                  onChange={(e) => {
-                    const m = Math.max(5, parseFloat(e.target.value) || 150);
-                    updateExplorer(price > m ? { max: m, price: m } : { max: m });
-                  }}
-                />
+              <label className="grid gap-1 sm:col-span-2">
+                <span className="text-[10.5px] text-fx-ink-3">409A after today</span>
+                <select
+                  className={INPUT}
+                  value={fmvMode}
+                  onChange={(e) => updateExplorer({ fmvMode: e.target.value as FmvMode })}
+                >
+                  {FMV_MODES.map((m) => (
+                    <option key={m} value={m}>{modeOption(m)}</option>
+                  ))}
+                </select>
               </label>
             </div>
           </div>
         </Card>
 
-        {/* Totals */}
+        {/* Decision numbers */}
         <div className="flex flex-wrap gap-2.5">
-          <StatTile label="All granted" value={usd(totals.all)} color="var(--fx-accent)" sub="payout if fully vested" />
           <StatTile
-            label="Vested today"
-            value={usd(totals.vested)}
-            sub={`${Math.round(totals.vestedShares).toLocaleString("en-US")} shares`}
+            label="If you leave today"
+            value={usd(decision.leaveNow)}
+            color="var(--fx-accent)"
+            sub={`vested units bought out at the ${money2(f0)} 409A`}
+          />
+          <StatTile label="Each $1 of exit price" value={`+${usd(decision.perDollar)}`} sub="across all granted units, once vested" />
+          <StatTile
+            label="Staying 12 more months adds"
+            value={`+${usd(decision.stay12Exit)}`}
+            sub={`at a ${money2(price)} exit · +${usd(decision.stay12Buyout)} to a buyout`}
           />
           <StatTile
-            label="Still vesting"
-            value={usd(totals.unvested)}
-            sub={
-              totals.nextVest
-                ? `next vest ${totals.nextVest.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
-                : grants.length
-                  ? "fully vested"
-                  : undefined
-            }
+            label="Unvested, lost if you leave today"
+            value={usd(decision.forfeitExit)}
+            sub={`at a ${money2(price)} exit · ${usd(decision.forfeitAt409a)} at the 409A`}
           />
         </div>
 
-        {grants.length > 0 && (
+        {grants.length > 0 && scenarios && grid && (
           <>
+            {/* Exit scenarios */}
+            <Card>
+              <SectionHeader label="EXIT SCENARIOS" />
+              <Caption>If the exit happens on a given date, what you&rsquo;d get at 1×, 2×, 3× or 5× today&rsquo;s 409A.</Caption>
+              <ExitScenariosChart
+                rows={scenarios.rows}
+                start={today.getTime()}
+                earliest={earliest.getTime()}
+                end={scenarios.end.getTime()}
+                series={SCENARIO_MULTIPLES.map((k, i) => ({
+                  key: `x${k}`,
+                  short: `${k}×`,
+                  label: `${k}× 409A · ${money2(f0 * k)}`,
+                  color: SCENARIO_COLORS[i],
+                }))}
+              />
+              <ChartLegend items={SCENARIO_MULTIPLES.map((k, i) => ({ label: `${k}× 409A · ${money2(f0 * k)}`, color: SCENARIO_COLORS[i], line: true }))} />
+              <Read>
+                If the exit comes in <b>{monthYear(earliest)}</b>, you&rsquo;d get <b>{usd(payoutAt(grants, earliest, f0))}</b> at 1× and{" "}
+                <b>{usd(payoutAt(grants, earliest, f0 * 5))}</b> at 5×. The lines keep rising until your last grant finishes vesting
+                {lv ? <> in <b>{monthYear(lv)}</b></> : null}.
+              </Read>
+              <DataTable
+                headers={["Exit date", ...SCENARIO_MULTIPLES.map((k) => `${k}× (${money2(f0 * k)})`)]}
+                rows={scenarios.rows
+                  .filter((r) => r[`x1`] != null)
+                  .filter((_, i) => i % 6 === 0)
+                  .map((r) => [monthYear(new Date(r.t)), ...SCENARIO_MULTIPLES.map((k) => usd(r[`x${k}`] as number))])}
+              />
+            </Card>
+
+            {/* Exit payout grid */}
             <Card>
               <SectionHeader
-                label="VALUE BY SHARE PRICE"
+                label="EXIT PAYOUT GRID"
+                trailing={
+                  <button
+                    type="button"
+                    aria-expanded={gridOpen}
+                    onClick={() => updateExplorer({ gridOpen: !gridOpen })}
+                    className="inline-flex items-center gap-1 rounded-[7px] px-2 py-1 text-[11.5px] font-semibold text-fx-accent hover:bg-fx-accent-soft"
+                  >
+                    {gridOpen ? "Show your price only" : "Show all prices"}
+                    <ChevronDown size={14} className={`transition-transform ${gridOpen ? "rotate-180" : ""}`} />
+                  </button>
+                }
+              />
+              <Caption>
+                Exact payout for each exit date and price, counting only units vested by then. Later exits add vesting; higher prices
+                multiply the spread.
+              </Caption>
+              <ExitGrid grid={grid} expanded={gridOpen} />
+            </Card>
+
+            {/* Vesting ahead */}
+            <Card>
+              <SectionHeader
+                label="VESTING AHEAD"
                 trailing={
                   <SegmentedControl
                     size="sm"
-                    ariaLabel="Which shares to count"
-                    value={mode}
-                    onChange={(m) => updateExplorer({ mode: m })}
+                    ariaLabel="Vesting view"
+                    value={vestView}
+                    onChange={(v) => updateExplorer({ vestView: v })}
                     options={[
-                      { value: "all", label: "All granted" },
-                      { value: "vested", label: "Vested today" },
+                      { value: "monthly", label: "Monthly" },
+                      { value: "yearly", label: "Yearly" },
                     ]}
                   />
                 }
               />
-              <p className="-mt-1 mb-3 text-[12px] text-fx-ink-3">
-                Each band is one grant. A grant adds nothing until the price passes its strike.
-              </p>
-              <PriceValueChart
+              <Caption>
+                {vestView === "monthly"
+                  ? `What each of the next 36 months at the company adds: bars at a ${money2(price)} exit, the line to a buyout.`
+                  : `How much vests in each calendar year, at a ${money2(price)} exit price.`}
+              </Caption>
+              <VestingAheadChart
+                rows={vestView === "monthly" ? monthly : yearly}
                 grants={grants}
-                rows={curve}
-                price={price}
-                fmv={fmv}
-                maxPrice={max}
-                markerValue={mode === "vested" ? totals.vested : totals.all}
+                view={vestView}
+                totalLabel={`Added to an exit at ${money2(price)}`}
+                buyoutLabel="Added to a buyout"
               />
-              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px]">
-                {grants.map((g, i) => (
-                  <span key={g.id} className="inline-flex items-center gap-1.5">
-                    <i className="inline-block h-2.5 w-2.5 rounded-[3px]" style={{ background: grantColor(i) }} />
-                    {g.name || "Grant"}
-                    <span className="fx-num text-fx-ink-3">${(g.strike || 0).toFixed(2)}</span>
-                  </span>
-                ))}
-              </div>
+              <ChartLegend items={vestView === "monthly" ? [...grantLegend, { label: "Added to a buyout if you leave", color: "var(--fx-ink)", line: true }] : grantLegend} />
+              {vestView === "monthly" ? <MonthlyRead rows={monthly} grants={grants} price={price} today={today} mode={fmvMode} /> : <YearlyRead rows={yearly} price={price} today={today} />}
+              <DataTable
+                headers={[vestView === "monthly" ? "Month" : "Year", ...grants.map((g) => g.name || "Grant"), `Exit at ${money2(price)}`, ...(vestView === "monthly" ? ["Buyout"] : [])]}
+                rows={(vestView === "monthly" ? monthly : yearly).map((r) => [
+                  vestView === "monthly" ? r.title.replace("Staying through ", "") : r.label,
+                  ...grants.map((g) => usd(Number(r[grantKey(g)] ?? 0))),
+                  usd(r.total),
+                  ...(vestView === "monthly" ? [usd(r.buyout ?? 0)] : []),
+                ])}
+              />
             </Card>
 
-            <Card>
-              <SectionHeader label="VESTED VALUE OVER TIME" />
-              <p className="-mt-1 mb-3 text-[12px] text-fx-ink-3">
-                Month by month at ${price.toFixed(2)} per share, as each grant vests.
-              </p>
-              <VestingTimelineChart grants={grants} rows={timeline} todayLabel={todayLabel} />
-            </Card>
+            {/* 409A history & outlook */}
+            {history.length > 0 && (
+              <Card>
+                <SectionHeader label="409A HISTORY & OUTLOOK" />
+                <Caption>Your grant strikes are the 409A on each grant date. From today, three paths for where it goes next.</Caption>
+                <HistoryChart
+                  rows={history}
+                  paths={historyPaths(growth.recent)}
+                  selected={fmvMode}
+                  start={addMonths(growth.points[0].date, -4).getTime()}
+                  end={historyEnd.getTime()}
+                  today={today.getTime()}
+                />
+                <ChartLegend
+                  items={[
+                    { label: "Grant strikes (the 409A on each grant date)", color: "var(--fx-at-1)", line: true },
+                    ...historyPaths(growth.recent).map((p) => ({ label: p.mode === fmvMode ? `${p.label} · in use` : p.label, color: p.color, line: true, dashed: p.dashed })),
+                  ]}
+                />
+                <Read>
+                  Growth between your grants went <b>{growth.intervals.map((iv) => pct(iv.rate)).join(" → ")}</b> a year.{" "}
+                  {growth.decay < 0 ? (
+                    <>
+                      Continuing that slowdown gives about{" "}
+                      <b>{[1, 2, 3].map((k) => pct(rateAt(growth, "slow", addMonths(today, 12 * k - 6), today))).join(", ")}</b> over the
+                      next three years, for a 409A of <b>{money2(fmvOf("slow", in3y))}</b> in <b>{monthYear(in3y)}</b>.{" "}
+                    </>
+                  ) : (
+                    <>Growth hasn&rsquo;t been slowing, so &ldquo;keeps slowing&rdquo; holds the recent rate. </>
+                  )}
+                  Holding the recent rate gives <b>{money2(fmvOf("recent", in3y))}</b>; flat stays at <b>{money2(f0)}</b>. The path in use
+                  feeds the buyout figures above.
+                </Read>
+                <DataTable
+                  headers={["Date", "Flat", "Keeps slowing", "Rate that year", "Recent rate"]}
+                  rows={[0, 1, 2, 3, 4].map((k) => {
+                    const d = addMonths(today, 12 * k);
+                    return [
+                      k ? monthYear(d) : "Today",
+                      money2(fmvOf("flat", d)),
+                      money2(fmvOf("slow", d)),
+                      k ? pct(rateAt(growth, "slow", addMonths(d, -6), today)) : "–",
+                      money2(fmvOf("recent", d)),
+                    ];
+                  })}
+                />
+              </Card>
+            )}
           </>
         )}
 
@@ -494,18 +676,16 @@ export default function EquityPage() {
               </span>
             }
           />
-          <p className="-mt-1 mb-3 text-[12px] text-fx-ink-3">
-            One row per grant, as shown in your equity portal. Vesting is monthly after the cliff. Changes save
-            when you leave a field.
-          </p>
+          <Caption>
+            One row per grant, as shown in your equity portal. Vesting is monthly after the cliff. Changes save when you leave a
+            field.
+          </Caption>
 
           {grants.length === 0 ? (
-            <p className="py-8 text-center text-[13px] text-fx-ink-2">
-              No grants yet. Add one to see what it&rsquo;s worth.
-            </p>
+            <p className="py-8 text-center text-[13px] text-fx-ink-2">No grants yet. Add one to see what it&rsquo;s worth.</p>
           ) : (
             <div className="-mx-1.5 overflow-x-auto">
-              <table className="w-full min-w-[860px] border-collapse">
+              <table className="w-full min-w-[900px] border-collapse">
                 <thead>
                   <tr className="border-b border-fx-line text-left text-[10.5px] font-medium text-fx-ink-3">
                     <th className="w-[22px] px-1.5 py-1.5" />
@@ -516,8 +696,8 @@ export default function EquityPage() {
                     <th className="w-[70px] px-1.5 py-1.5 font-medium">Years</th>
                     <th className="w-[76px] px-1.5 py-1.5 font-medium">Cliff mo</th>
                     <th className="w-[70px] px-1.5 py-1.5 text-right font-medium">Vested</th>
-                    <th className="w-[110px] px-1.5 py-1.5 text-right font-medium">Value now</th>
-                    <th className="w-[120px] px-1.5 py-1.5 text-right font-medium">Value at full</th>
+                    <th className="w-[120px] px-1.5 py-1.5 text-right font-medium">If you leave now</th>
+                    <th className="w-[130px] px-1.5 py-1.5 text-right font-medium">Fully vested, at exit</th>
                     <th className="w-[40px] px-1.5 py-1.5" />
                   </tr>
                 </thead>
@@ -528,6 +708,7 @@ export default function EquityPage() {
                       grant={g}
                       index={i}
                       price={price}
+                      fmvToday={f0}
                       today={today}
                       autoFocus={g.id === focusId}
                       onLiveChange={replaceGrant}
@@ -553,9 +734,9 @@ export default function EquityPage() {
         </Card>
 
         <p className="max-w-[80ch] text-[11.5px] text-fx-ink-3">
-          Figures are the payout — the spread between share price and strike — before tax, dilution, or any
-          discount for not being able to sell. The 409A shown is the strike of your most recent grant, since
-          grants are priced at the company&rsquo;s 409A on their grant date.
+          Figures are before tax, dilution, or any discount for not being able to sell. Today&rsquo;s 409A is the strike of your most
+          recent grant, since grants are priced at the company&rsquo;s 409A on their grant date. The 409A paths are scenarios drawn
+          from the growth between your grants, not forecasts: a 409A can also fall.
         </p>
       </div>
 
@@ -569,5 +750,80 @@ export default function EquityPage() {
         />
       )}
     </div>
+  );
+}
+
+function historyPaths(recent: number): HistoryPath[] {
+  return [
+    { mode: "flat", label: "Stays at today’s", color: "var(--fx-ink-3)", dashed: false },
+    { mode: "slow", label: "Growth keeps slowing (computed)", color: "var(--fx-ramp-2)", dashed: true },
+    { mode: "recent", label: `Holds the recent rate (${pct(recent)}/yr)`, color: "var(--fx-ramp-4)", dashed: true },
+  ];
+}
+
+/** Where the monthly gain from staying steps down, and why. */
+function MonthlyRead({
+  rows,
+  grants,
+  price,
+  today,
+  mode,
+}: {
+  rows: ReturnType<typeof monthlyGains>;
+  grants: EquityGrant[];
+  price: number;
+  today: Date;
+  mode: FmvMode;
+}) {
+  if (!rows.length) return null;
+  const drops: ReactNode[] = [];
+  for (let k = 1; k < rows.length && drops.length < 2; k++) {
+    const prev = rows[k - 1].total, cur = rows[k].total;
+    if (cur < prev * 0.9 && prev - cur > 50) {
+      const monthDate = addMonths(today, k + 1);
+      const done = grants.find((g) => {
+        const e = grantEnd(g);
+        return e && e > addMonths(monthDate, -2) && e <= monthDate;
+      });
+      drops.push(
+        <span key={k}>
+          {drops.length ? ", then " : ", dropping to "}
+          <b>{usd(cur)}</b> from {monthYear(monthDate)}
+          {done ? ` (when ${done.name || "a grant"} finishes)` : ""}
+        </span>,
+      );
+    }
+  }
+  const zero = rows.findIndex((r, k) => k > 0 && (r.buyout ?? 0) < 1);
+  return (
+    <Read>
+      At <b>{money2(price)}</b>, the next month of staying adds <b>{usd(rows[0].total)}</b>
+      {drops}. A buyout gains <b>{usd(rows[0].buyout ?? 0)}</b> a month at first
+      {mode === "flat" && zero > 0 ? (
+        <>
+          {" "}and nothing from <b>{monthYear(addMonths(today, zero + 1))}</b>: a grant whose strike equals today&rsquo;s 409A adds
+          nothing to a buyout
+        </>
+      ) : null}
+      .
+    </Read>
+  );
+}
+
+function YearlyRead({ rows, price, today }: { rows: ReturnType<typeof yearlyVesting>; price: number; today: Date }) {
+  if (!rows.length) return null;
+  const totals = rows.map((r) => r.total);
+  const peak = totals.indexOf(Math.max(...totals));
+  const next = rows.findIndex((r) => r.label === String(today.getFullYear() + 1));
+  return (
+    <Read>
+      At <b>{money2(price)}</b>, vesting peaks in <b>{rows[peak].label.replace(" · now", "")}</b> at <b>{usd(totals[peak])}</b>
+      {next >= 0 ? (
+        <>
+          . Next year adds <b>{usd(totals[next])}</b>. Without new grants it keeps falling as older grants finish
+        </>
+      ) : null}
+      .
+    </Read>
   );
 }

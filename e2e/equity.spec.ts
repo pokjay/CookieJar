@@ -102,19 +102,45 @@ test("adding and editing a grant persists it to the database", async ({ page }) 
   await expect(page.getByLabel(`${NAME} shares`)).toHaveValue("1000");
 });
 
-test("a grant's payout is shares × (price − strike)", async ({ page }) => {
+test("a grant pays its spread at the exit price, and at the 409A if you leave", async ({ page }) => {
   await openEquity(page);
-  await page.getByLabel("Price", { exact: true }).fill("30");
+  await page.getByLabel("Exit price", { exact: true }).fill("30");
 
   // Granted 2020 on a 4-year schedule → fully vested today.
   const row = page.locator("tr", { has: page.getByLabel(`${NAME} shares`) });
   await expect(row).toContainText("100%");
-  // 1,000 × (30 − 10), both "value now" and "value at full".
-  await expect(row.getByText("$20,000", { exact: true })).toHaveCount(2);
+  // Fully vested, at exit: 1,000 × (30 − 10).
+  await expect(row.getByText("$20,000", { exact: true })).toHaveCount(1);
+  // If you leave now: bought out at today's 409A, the seeded latest grant's
+  // $16.00 strike → 1,000 × (16 − 10).
+  await expect(row.getByText("$6,000", { exact: true })).toHaveCount(1);
 
-  // Below the strike the payout is zero, not negative.
-  await page.getByLabel("Price", { exact: true }).fill("5");
-  await expect(row.getByText("$0", { exact: true })).toHaveCount(2);
+  // Below the strike the exit payout is zero, not negative; the buyout is unchanged.
+  await page.getByLabel("Exit price", { exact: true }).fill("5");
+  await expect(row.getByText("$0", { exact: true })).toHaveCount(1);
+  await expect(row.getByText("$6,000", { exact: true })).toHaveCount(1);
+});
+
+test("the 409A, payout grid and vesting views respond to their controls", async ({ page }) => {
+  await openEquity(page);
+
+  // Today's 409A is the latest-dated grant's strike (seeded "Refresh 2025").
+  const fmv = page.getByText("Today’s 409A", { exact: true }).locator("xpath=..");
+  await expect(fmv).toContainText("$16.00");
+  await expect(fmv).toContainText("Refresh 2025");
+
+  // The payout grid starts collapsed to the exit-price row and expands to every price.
+  const gridRows = page.locator("table.border-separate tbody tr");
+  await page.getByRole("button", { name: /show all prices/i }).click();
+  await expect(gridRows).toHaveCount(7);
+  await page.getByRole("button", { name: /show your price only/i }).click();
+  await expect(gridRows).toHaveCount(1);
+
+  // Vesting ahead switches between the next 36 months and calendar years.
+  await expect(page.getByText(/next 36 months/)).toBeVisible();
+  await page.getByRole("button", { name: "Yearly", exact: true }).click();
+  await expect(page.getByText(/in each calendar year/)).toBeVisible();
+  await expect(page.getByText(/vesting peaks in/)).toBeVisible();
 });
 
 test("deleting a grant removes it from the database", async ({ page }) => {
