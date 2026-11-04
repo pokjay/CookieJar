@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.15.1](https://github.com/pokjay/CookieJar/compare/v0.15.0...v0.15.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **equity:** memoise lastVestEnd so the React Compiler keeps historyEnd's memo ([#183](https://github.com/pokjay/CookieJar/issues/183)) ([4997597](https://github.com/pokjay/CookieJar/commit/4997597fb89ccdddafc0ec7cf03ab96643d4fcb2))
+
 ## [0.15.0](https://github.com/pokjay/CookieJar/compare/v0.14.0...v0.15.0) (2026-11-04)
 
 
