@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.14.0](https://github.com/pokjay/CookieJar/compare/v0.13.0...v0.14.0) (2026-11-04)
+
+
+### Features
+
+* **equity:** add Equity page for EAR grants, stored in the DB ([#177](https://github.com/pokjay/CookieJar/issues/177)) ([397c56b](https://github.com/pokjay/CookieJar/commit/397c56b1c33b8587c65bb958b1813702635cbadb))
+
 ## [0.13.0](https://github.com/pokjay/CookieJar/compare/v0.12.1...v0.13.0) (2026-08-08)
 
 
