@@ -269,6 +269,20 @@ export interface InvestmentAccount {
   last_updated: string | null;
 }
 
+/** An equity grant (equity appreciation rights; Equity page). Strike is in USD. */
+export interface EquityGrant {
+  id: number;
+  name: string;
+  /** Grant / vesting-start date, "YYYY-MM-DD". */
+  grant_date: string | null;
+  shares: number;
+  strike: number;
+  vesting_years: number;
+  cliff_months: number;
+}
+
+export type EquityGrantPayload = Omit<EquityGrant, "id">;
+
 export interface UncategorizedDescription {
   processed_description: string;
   count: number;

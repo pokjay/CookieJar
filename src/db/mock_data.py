@@ -374,6 +374,23 @@ def _generate_business_mappings() -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Equity grants (Equity page)
+# ---------------------------------------------------------------------------
+
+
+def _generate_equity_grants() -> pd.DataFrame:
+    # Example grants: a hire grant plus refreshes. Strikes are in USD.
+    rows = [
+        (1, "Hire grant", date(2022, 3, 15), 8000, 4.20, 4, 12),
+        (2, "Refresh 2023", date(2023, 6, 1), 4000, 7.80, 4, 12),
+        (3, "Promotion", date(2024, 9, 10), 3000, 11.50, 4, 12),
+        (4, "Refresh 2025", date(2025, 11, 1), 2500, 16.00, 4, 12),
+    ]
+    cols = ["id", "name", "grant_date", "shares", "strike", "vesting_years", "cliff_months"]
+    return pd.DataFrame([dict(zip(cols, r)) for r in rows])
+
+
+# ---------------------------------------------------------------------------
 # Cached accessors
 # ---------------------------------------------------------------------------
 
@@ -420,3 +437,9 @@ def get_business_mappings() -> pd.DataFrame:
     if "business_mappings" not in _cache:
         _cache["business_mappings"] = _generate_business_mappings()
     return _cache["business_mappings"].copy()
+
+
+def get_equity_grants() -> pd.DataFrame:
+    if "equity_grants" not in _cache:
+        _cache["equity_grants"] = _generate_equity_grants()
+    return _cache["equity_grants"].copy()

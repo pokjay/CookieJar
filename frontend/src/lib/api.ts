@@ -31,6 +31,8 @@ import type {
   TxnHeatmapPoint,
   InvestmentAccount,
   CreateAccountPayload,
+  EquityGrant,
+  EquityGrantPayload,
   UncategorizedDescription,
   CategoryMappingPayload,
   AppSettings,
@@ -520,4 +522,22 @@ export function deleteScraperAccount(
 
 export function triggerSync(payload: ScraperSyncPayload): Promise<{ run_id: string }> {
   return postJson("/api/scraper/sync", payload);
+}
+
+// --- Equity grants ---
+
+export function getEquityGrants(): Promise<EquityGrant[]> {
+  return fetchJson("/api/equity/grants");
+}
+
+export function createEquityGrant(payload: EquityGrantPayload): Promise<EquityGrant> {
+  return postJson("/api/equity/grants", payload);
+}
+
+export function updateEquityGrant(id: number, payload: EquityGrantPayload): Promise<EquityGrant> {
+  return requestJson("PUT", `/api/equity/grants/${id}`, payload);
+}
+
+export function deleteEquityGrant(id: number): Promise<{ ok: boolean }> {
+  return requestJson("DELETE", `/api/equity/grants/${id}`);
 }
