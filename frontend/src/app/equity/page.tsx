@@ -360,7 +360,7 @@ export default function EquityPage() {
   const grid = useMemo(() => (f0 > 0 ? exitGrid(grants, price, f0, earliest) : null), [grants, price, f0, earliest]);
   const monthly = useMemo(() => monthlyGains(grants, price, fmv, today), [grants, price, fmv, today]);
   const yearly = useMemo(() => yearlyVesting(grants, price, today), [grants, price, today]);
-  const lv = lastVestEnd(grants);
+  const lv = useMemo(() => lastVestEnd(grants), [grants]);
   const lvTime = lv?.getTime() ?? 0;
   const historyEnd = useMemo(() => new Date(Math.max(addMonths(today, 36).getTime(), lvTime)), [today, lvTime]);
   const history = useMemo(
