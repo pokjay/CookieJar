@@ -1,4 +1,4 @@
-# Unit-test gate (#110): backend pytest + ruff, and the scraper sidecar's
+# Unit-test gate (#110): backend pytest + ruff, frontend eslint, and the scraper sidecar's
 # node:test suite (including the preparePage WAF-hardening browser test,
 # which runs against the runner's preinstalled Chrome — REQUIRE_BROWSER_TESTS
 # turns a missing browser into a hard failure instead of a silent skip).
@@ -67,3 +67,25 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+  frontend:
+    name: Frontend (eslint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
