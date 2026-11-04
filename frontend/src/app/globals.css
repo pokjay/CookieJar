@@ -95,6 +95,21 @@
   --fx-at-4: #ad8301; /* Rainy Day     */
   --fx-at-5: #a02f6f; /* Bank Account  */
 
+  /* Equity page. Price scenarios (1×, 2×, 3×, 5× the 409A) are ordered, so they
+     take one hue stepped light→dark (validated as an ordinal ramp), and the
+     exit payout grid shades between the ramp's ends. --fx-heat-ink is the text
+     colour on the dark end. --fx-plot-gap matches the card so stacked
+     segments read as separated by the surface itself. */
+  --fx-ramp-1: #8fb0da;
+  --fx-ramp-2: #4f86c6;
+  --fx-ramp-3: #205ea6;
+  --fx-ramp-4: #123d70;
+  --fx-heat-lo: #e9eff7;
+  --fx-heat-hi: #123d70;
+  --fx-heat-ink: #fffcf0;
+  --fx-shade: rgb(16 15 15 / 0.045);
+  --fx-plot-gap: #fffcf0;
+
   background: var(--fx-page);
   color: var(--fx-ink);
 }
@@ -138,6 +153,16 @@
   --fx-at-3: #8b7ec8;
   --fx-at-4: #b58a12;
   --fx-at-5: #ce5d97;
+
+  --fx-ramp-1: #2c5a8c;
+  --fx-ramp-2: #4385be;
+  --fx-ramp-3: #7fadda;
+  --fx-ramp-4: #bcd5ef;
+  --fx-heat-lo: #17202b;
+  --fx-heat-hi: #bcd5ef;
+  --fx-heat-ink: #100f0f;
+  --fx-shade: rgb(244 241 232 / 0.05);
+  --fx-plot-gap: #080807; /* the 3% card wash over the black page */
 }
 
 /* Figures line up in columns and never break across the thousands comma. */
