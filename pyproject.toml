@@ -10,7 +10,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "fastapi>=0.138.0",
     "uvicorn>=0.52.1",
-    "pykeepass>=4.1.0",
+    "pykeepass>=4.2.0",
     "httpx>=0.27.0",
     "tzdata>=2026.3",
 ]
