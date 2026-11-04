@@ -66,7 +66,6 @@ export default function CategoryMappingPage() {
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function openRow(desc: string) {

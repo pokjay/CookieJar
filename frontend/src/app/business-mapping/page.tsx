@@ -205,7 +205,6 @@ export default function BusinessMappingPage() {
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function openDesc(desc: string) {

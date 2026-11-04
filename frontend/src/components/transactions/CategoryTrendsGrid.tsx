@@ -8,7 +8,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { formatCurrency, formatCurrencyFull } from "@/lib/formatting";
+import { formatCurrencyFull } from "@/lib/formatting";
 import type { TxnCategoryTrend } from "@/lib/types";
 import { useThemeColors } from "@/lib/use-theme-colors";
 import { MONTH_ORDER } from "@/lib/constants";
@@ -30,10 +30,6 @@ function MiniLineChart({
     .map((m) => {
       const row = rows.find((r) => r.month_name === m);
       return { month_name: m, spend: row?.spend ?? 0 };
-    })
-    .filter((_, i) => {
-      // Only show months up to the last non-zero month
-      return true;
     });
 
   const maxSpend = Math.max(...chartData.map((d) => d.spend));
