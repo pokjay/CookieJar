@@ -15,6 +15,7 @@ import { PriceValueChart, VestingTimelineChart } from "@/components/options/Opti
 import {
   computeTotals,
   grantColor,
+  latest409a,
   priceCurve,
   spread,
   toISODate,
@@ -23,25 +24,32 @@ import {
   vestingTimeline,
 } from "@/components/options/model";
 
-// The assumed price, 409A and chart range are "play with it" inputs, so they
-// live in this browser only. The grants themselves are stored in the database.
+// The assumed price and chart range are "play with it" inputs, so they live in
+// this browser only. The grants are stored in the database, and the 409A is
+// derived from them (the latest grant's strike).
 const EXPLORER_KEY = "options-explorer-v1";
 
 type Mode = "all" | "vested";
 
 interface Explorer {
   price: number;
-  fmv: number;
   max: number;
   mode: Mode;
 }
 
-const DEFAULT_EXPLORER: Explorer = { price: 60, fmv: 18.5, max: 150, mode: "all" };
+const DEFAULT_EXPLORER: Explorer = { price: 60, max: 150, mode: "all" };
 
 function loadExplorer(): Explorer {
   try {
     const raw = localStorage.getItem(EXPLORER_KEY);
-    if (raw) return { ...DEFAULT_EXPLORER, ...JSON.parse(raw) };
+    if (raw) {
+      const s = JSON.parse(raw);
+      return {
+        price: typeof s.price === "number" ? s.price : DEFAULT_EXPLORER.price,
+        max: typeof s.max === "number" ? s.max : DEFAULT_EXPLORER.max,
+        mode: s.mode === "vested" ? "vested" : "all",
+      };
+    }
   } catch {
     // private mode / blocked storage: fall back to defaults
   }
@@ -252,7 +260,8 @@ export default function OptionsPage() {
         name: "New grant",
         grant_date: toISODate(today),
         shares: 1000,
-        strike: explorer.fmv || 10,
+        // A new grant is priced at the current 409A, which is the latest strike.
+        strike: fmv || 10,
         vesting_years: 4,
         cliff_months: 12,
       });
@@ -282,7 +291,9 @@ export default function OptionsPage() {
     }
   }
 
-  const { price, fmv, max, mode } = explorer;
+  const { price, max, mode } = explorer;
+  const fmvSource = latest409a(grants);
+  const fmv = fmvSource?.price ?? 0;
   const totals = useMemo(() => computeTotals(grants, price, today), [grants, price, today]);
   const curve = useMemo(
     () => priceCurve(grants, max, mode === "vested", today),
@@ -307,8 +318,8 @@ export default function OptionsPage() {
         <div>
           <h1 className="text-[19px] font-semibold tracking-[-0.02em]">Options</h1>
           <p className="mt-[5px] max-w-[68ch] text-[12.5px] text-fx-ink-3">
-            What your stock option grants are worth at a share price you pick — shares × (price − strike),
-            in US dollars, before tax. For exploring only: not counted in net worth.
+            What your equity appreciation rights pay out at a share price you pick — shares × (price −
+            strike), in US dollars, before tax. For exploring only: not counted in net worth.
           </p>
         </div>
 
@@ -370,17 +381,18 @@ export default function OptionsPage() {
                   onChange={(e) => setPrice(parseFloat(e.target.value))}
                 />
               </label>
-              <label className="grid gap-1">
+              <div className="grid gap-1">
                 <span className="text-[10.5px] text-fx-ink-3">Latest 409A</span>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  className={`${INPUT} fx-num`}
-                  value={fmv}
-                  onChange={(e) => updateExplorer({ fmv: Math.max(0, parseFloat(e.target.value) || 0) })}
-                />
-              </label>
+                <span
+                  className="fx-num rounded-[8px] border border-transparent px-2 py-1.5 text-[13px]"
+                  title="The strike of your most recent grant — grants are priced at the 409A of their grant date"
+                >
+                  {fmvSource ? `$${fmv.toFixed(2)}` : "—"}
+                </span>
+                <span className="truncate text-[10.5px] text-fx-ink-3">
+                  {fmvSource ? `from ${fmvSource.grant.name || "latest grant"}` : "add a dated grant"}
+                </span>
+              </div>
               <label className="grid gap-1">
                 <span className="text-[10.5px] text-fx-ink-3">Chart up to</span>
                 <input
@@ -401,7 +413,7 @@ export default function OptionsPage() {
 
         {/* Totals */}
         <div className="flex flex-wrap gap-2.5">
-          <StatTile label="All granted" value={usd(totals.all)} color="var(--fx-accent)" sub="if fully vested" />
+          <StatTile label="All granted" value={usd(totals.all)} color="var(--fx-accent)" sub="payout if fully vested" />
           <StatTile
             label="Vested today"
             value={usd(totals.vested)}
@@ -418,7 +430,6 @@ export default function OptionsPage() {
                   : undefined
             }
           />
-          <StatTile label="Cost to exercise vested" value={usd(totals.exerciseCost)} sub="shares × strike" />
         </div>
 
         {grants.length > 0 && (
@@ -542,10 +553,9 @@ export default function OptionsPage() {
         </Card>
 
         <p className="max-w-[80ch] text-[11.5px] text-fx-ink-3">
-          Figures are intrinsic value (the spread between price and strike), before tax — including Israeli
-          Section 102 treatment — dilution, or any discount for not being able to sell. They leave out option
-          expiry, the exercise window if you leave, accelerated vesting and early exercise. The 409A line marks
-          the company&rsquo;s latest fair market value.
+          Figures are the payout — the spread between share price and strike — before tax, dilution, or any
+          discount for not being able to sell. The 409A shown is the strike of your most recent grant, since
+          grants are priced at the company&rsquo;s 409A on their grant date.
         </p>
       </div>
 

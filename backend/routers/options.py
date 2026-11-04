@@ -3,8 +3,9 @@
 Grants live in their own table and are intentionally NOT part of net worth:
 the overview / net-worth queries only read investment_accounts(_tracking), so
 nothing stored here changes the household totals. The page is a standalone
-"what are my options worth at price X" explorer; the assumed share price and
-409A are exploration inputs kept in the browser, only the grants are stored.
+"what are my grants worth at price X" explorer. Only the grants are stored: the
+assumed share price is an exploration input kept in the browser, and the 409A
+shown is derived client-side from the latest grant's strike.
 """
 
 import math

@@ -74,7 +74,6 @@ export interface Totals {
   all: number;
   vested: number;
   unvested: number;
-  exerciseCost: number;
   vestedShares: number;
   nextVest: Date | null;
 }
@@ -82,7 +81,6 @@ export interface Totals {
 export function computeTotals(grants: OptionGrant[], price: number, today: Date): Totals {
   let all = 0;
   let vested = 0;
-  let exerciseCost = 0;
   let vestedShares = 0;
   let nextVest: Date | null = null;
   for (const g of grants) {
@@ -91,11 +89,26 @@ export function computeTotals(grants: OptionGrant[], price: number, today: Date)
     all += value;
     vested += value * f;
     vestedShares += (g.shares || 0) * f;
-    exerciseCost += (g.shares || 0) * f * (g.strike || 0);
     const nv = nextVestDate(g, today);
     if (nv && (!nextVest || nv < nextVest)) nextVest = nv;
   }
-  return { all, vested, unvested: all - vested, exerciseCost, vestedShares, nextVest };
+  return { all, vested, unvested: all - vested, vestedShares, nextVest };
+}
+
+/**
+ * The latest known 409A: a grant is priced at the company's 409A on its grant
+ * date, so the most recently dated grant's strike is the newest valuation we
+ * have. Null when no grant has a date.
+ */
+export function latest409a(grants: OptionGrant[]): { price: number; grant: OptionGrant } | null {
+  let latest: OptionGrant | null = null;
+  for (const g of grants) {
+    if (!g.grant_date) continue;
+    if (!latest || g.grant_date > latest.grant_date! || (g.grant_date === latest.grant_date && g.id > latest.id)) {
+      latest = g;
+    }
+  }
+  return latest ? { price: latest.strike || 0, grant: latest } : null;
 }
 
 export const grantKey = (g: OptionGrant) => `g${g.id}`;
