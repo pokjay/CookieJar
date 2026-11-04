@@ -269,8 +269,8 @@ export interface InvestmentAccount {
   last_updated: string | null;
 }
 
-/** A company stock option grant (Options page). Strike is in USD. */
-export interface OptionGrant {
+/** An equity grant (equity appreciation rights; Equity page). Strike is in USD. */
+export interface EquityGrant {
   id: number;
   name: string;
   /** Grant / vesting-start date, "YYYY-MM-DD". */
@@ -281,7 +281,7 @@ export interface OptionGrant {
   cliff_months: number;
 }
 
-export type OptionGrantPayload = Omit<OptionGrant, "id">;
+export type EquityGrantPayload = Omit<EquityGrant, "id">;
 
 export interface UncategorizedDescription {
   processed_description: string;

@@ -1,4 +1,4 @@
-"""Stock option grants REST endpoints (Options explorer page).
+"""Equity grant REST endpoints (Equity page).
 
 Grants live in their own table and are intentionally NOT part of net worth:
 the overview / net-worth queries only read investment_accounts(_tracking), so
@@ -16,14 +16,14 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from src.db.connection import is_mock_mode
-from src.db.mutations.options import (
-    delete_option_grant,
-    insert_option_grant,
-    update_option_grant,
+from src.db.mutations.equity import (
+    delete_equity_grant,
+    insert_equity_grant,
+    update_equity_grant,
 )
-from src.db.queries.options import get_option_grants
+from src.db.queries.equity import get_equity_grants
 
-router = APIRouter(prefix="/options")
+router = APIRouter(prefix="/equity")
 
 # Mock-mode store, seeded lazily from mock_data on first use.
 _mock_grants: Optional[list[dict]] = None
@@ -77,7 +77,7 @@ def _serialize(row: dict) -> dict:
 def _mock_store() -> list[dict]:
     global _mock_grants
     if _mock_grants is None:
-        _mock_grants = [_serialize(r) for r in get_option_grants().to_dict("records")]
+        _mock_grants = [_serialize(r) for r in get_equity_grants().to_dict("records")]
     return _mock_grants
 
 
@@ -91,7 +91,7 @@ def reset_mock_store() -> None:
 def list_grants() -> list[dict]:
     if is_mock_mode():
         return list(_mock_store())
-    return [_serialize(r) for r in get_option_grants().to_dict("records")]
+    return [_serialize(r) for r in get_equity_grants().to_dict("records")]
 
 
 @router.post("/grants", status_code=201)
@@ -102,7 +102,7 @@ def create_grant(body: GrantBody) -> dict:
         record = _serialize({"id": new_id, **body.model_dump()})
         store.append(record)
         return record
-    return _serialize(insert_option_grant(body.model_dump()))
+    return _serialize(insert_equity_grant(body.model_dump()))
 
 
 @router.put("/grants/{grant_id}")
@@ -114,7 +114,7 @@ def update_grant(grant_id: int, body: GrantBody) -> dict:
                 store[i] = _serialize({"id": grant_id, **body.model_dump()})
                 return store[i]
         raise HTTPException(status_code=404, detail="Grant not found")
-    updated = update_option_grant(grant_id, body.model_dump())
+    updated = update_equity_grant(grant_id, body.model_dump())
     if updated is None:
         raise HTTPException(status_code=404, detail="Grant not found")
     return _serialize(updated)
@@ -129,6 +129,6 @@ def delete_grant(grant_id: int) -> dict:
         if len(store) == before:
             raise HTTPException(status_code=404, detail="Grant not found")
         return {"ok": True}
-    if not delete_option_grant(grant_id):
+    if not delete_equity_grant(grant_id):
         raise HTTPException(status_code=404, detail="Grant not found")
     return {"ok": True}

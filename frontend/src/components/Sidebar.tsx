@@ -29,7 +29,7 @@ const navItems = [
   { href: "/investments", label: "Investments", shortLabel: "Invest.", icon: Landmark },
   { href: "/transactions", label: "Transactions", shortLabel: "Transact.", icon: Receipt },
   // After the first four so the mobile bottom bar keeps its primary tabs.
-  { href: "/options", label: "Options", shortLabel: "Options", icon: Coins },
+  { href: "/equity", label: "Equity", shortLabel: "Equity", icon: Coins },
   { href: "/travel", label: "Travel", shortLabel: "Travel", icon: Plane },
   { href: "/category-mapping", label: "Category Mapping", shortLabel: "Categories", icon: Tag },
   { href: "/business-mapping", label: "Business Mapping", shortLabel: "Businesses", icon: Building2 },

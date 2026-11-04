@@ -1,7 +1,7 @@
-import type { OptionGrant } from "@/lib/types";
+import type { EquityGrant } from "@/lib/types";
 
 /**
- * Valuation model for the Options page.
+ * Valuation model for the Equity page.
  *
  * - Value of a grant is its intrinsic value: shares × (price − strike), and
  *   zero when the price is at or below the strike. Before tax, dilution or any
@@ -45,10 +45,10 @@ export function monthsBetween(a: Date, b: Date): number {
   return m;
 }
 
-const totalMonths = (g: OptionGrant) => Math.max(1, (g.vesting_years || 4) * 12);
+const totalMonths = (g: EquityGrant) => Math.max(1, (g.vesting_years || 4) * 12);
 
 /** Fraction of the grant vested at `at`, 0..1. */
-export function vestedFraction(g: OptionGrant, at: Date): number {
+export function vestedFraction(g: EquityGrant, at: Date): number {
   const start = parseDate(g.grant_date);
   if (!start) return 0;
   const m = monthsBetween(start, at);
@@ -57,12 +57,12 @@ export function vestedFraction(g: OptionGrant, at: Date): number {
 }
 
 /** Intrinsic value of every share in the grant at `price`. */
-export function spread(g: OptionGrant, price: number): number {
+export function spread(g: EquityGrant, price: number): number {
   return Math.max(0, price - (g.strike || 0)) * (g.shares || 0);
 }
 
 /** Next date on which more of this grant vests, or null if fully vested / undated. */
-export function nextVestDate(g: OptionGrant, today: Date): Date | null {
+export function nextVestDate(g: EquityGrant, today: Date): Date | null {
   const start = parseDate(g.grant_date);
   if (!start || vestedFraction(g, today) >= 1) return null;
   const m = Math.max(g.cliff_months || 0, monthsBetween(start, today) + 1);
@@ -78,7 +78,7 @@ export interface Totals {
   nextVest: Date | null;
 }
 
-export function computeTotals(grants: OptionGrant[], price: number, today: Date): Totals {
+export function computeTotals(grants: EquityGrant[], price: number, today: Date): Totals {
   let all = 0;
   let vested = 0;
   let vestedShares = 0;
@@ -100,8 +100,8 @@ export function computeTotals(grants: OptionGrant[], price: number, today: Date)
  * date, so the most recently dated grant's strike is the newest valuation we
  * have. Null when no grant has a date.
  */
-export function latest409a(grants: OptionGrant[]): { price: number; grant: OptionGrant } | null {
-  let latest: OptionGrant | null = null;
+export function latest409a(grants: EquityGrant[]): { price: number; grant: EquityGrant } | null {
+  let latest: EquityGrant | null = null;
   for (const g of grants) {
     if (!g.grant_date) continue;
     if (!latest || g.grant_date > latest.grant_date! || (g.grant_date === latest.grant_date && g.id > latest.id)) {
@@ -111,7 +111,7 @@ export function latest409a(grants: OptionGrant[]): { price: number; grant: Optio
   return latest ? { price: latest.strike || 0, grant: latest } : null;
 }
 
-export const grantKey = (g: OptionGrant) => `g${g.id}`;
+export const grantKey = (g: EquityGrant) => `g${g.id}`;
 
 /**
  * Rows for the value-by-share-price chart: one row per price point from 0 to
@@ -119,7 +119,7 @@ export const grantKey = (g: OptionGrant) => `g${g.id}`;
  * where it really is.
  */
 export function priceCurve(
-  grants: OptionGrant[],
+  grants: EquityGrant[],
   maxPrice: number,
   vestedOnly: boolean,
   today: Date,
@@ -146,10 +146,10 @@ export interface TimelineRow {
 }
 
 /** Month-by-month vested value at `price`, from the first grant until the last one is fully vested. */
-export function vestingTimeline(grants: OptionGrant[], price: number): TimelineRow[] {
+export function vestingTimeline(grants: EquityGrant[], price: number): TimelineRow[] {
   const dated = grants
     .map((g) => ({ g, start: parseDate(g.grant_date) }))
-    .filter((x): x is { g: OptionGrant; start: Date } => x.start !== null);
+    .filter((x): x is { g: EquityGrant; start: Date } => x.start !== null);
   if (!dated.length) return [];
 
   const first = new Date(Math.min(...dated.map((x) => x.start.getTime())));

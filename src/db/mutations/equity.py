@@ -1,18 +1,18 @@
-"""Writes for stock option grants (real-DB mode only).
+"""Writes for equity grants (real-DB mode only).
 
-Mock mode keeps grants in an in-memory store in ``backend/routers/options.py``,
+Mock mode keeps grants in an in-memory store in ``backend/routers/equity.py``,
 mirroring how the investments router handles its mock writes.
 """
 
 from src.db.connection import execute_returning
-from src.db.queries.options import GRANT_COLUMNS
+from src.db.queries.equity import GRANT_COLUMNS
 
 
-def insert_option_grant(data: dict) -> dict:
+def insert_equity_grant(data: dict) -> dict:
     """Insert a grant and return the stored row."""
     df = execute_returning(
         f"""
-        INSERT INTO option_grants
+        INSERT INTO equity_grants
             (name, grant_date, shares, strike, vesting_years, cliff_months)
         VALUES
             (:name, :grant_date, :shares, :strike, :vesting_years, :cliff_months)
@@ -23,11 +23,11 @@ def insert_option_grant(data: dict) -> dict:
     return df.iloc[0].to_dict()
 
 
-def update_option_grant(grant_id: int, data: dict) -> dict | None:
+def update_equity_grant(grant_id: int, data: dict) -> dict | None:
     """Replace a grant's fields. Returns the stored row, or None if no such grant."""
     df = execute_returning(
         f"""
-        UPDATE option_grants SET
+        UPDATE equity_grants SET
             name = :name,
             grant_date = :grant_date,
             shares = :shares,
@@ -43,10 +43,10 @@ def update_option_grant(grant_id: int, data: dict) -> dict | None:
     return df.iloc[0].to_dict() if len(df) else None
 
 
-def delete_option_grant(grant_id: int) -> bool:
+def delete_equity_grant(grant_id: int) -> bool:
     """Delete a grant. Returns False if it didn't exist."""
     df = execute_returning(
-        "DELETE FROM option_grants WHERE id = :id RETURNING id",
+        "DELETE FROM equity_grants WHERE id = :id RETURNING id",
         {"id": grant_id},
     )
     return len(df) > 0

@@ -3,15 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Plus, Trash2, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import {
-  createOptionGrant,
-  deleteOptionGrant,
-  getOptionGrants,
-  updateOptionGrant,
+  createEquityGrant,
+  deleteEquityGrant,
+  getEquityGrants,
+  updateEquityGrant,
 } from "@/lib/api";
-import type { OptionGrant, OptionGrantPayload } from "@/lib/types";
+import type { EquityGrant, EquityGrantPayload } from "@/lib/types";
 import { Card, SectionHeader, SegmentedControl, StatTile } from "@/components/ledger/ui";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { PriceValueChart, VestingTimelineChart } from "@/components/options/OptionCharts";
+import { PriceValueChart, VestingTimelineChart } from "@/components/equity/EquityCharts";
 import {
   computeTotals,
   grantColor,
@@ -22,12 +22,12 @@ import {
   usd,
   vestedFraction,
   vestingTimeline,
-} from "@/components/options/model";
+} from "@/components/equity/model";
 
 // The assumed price and chart range are "play with it" inputs, so they live in
 // this browser only. The grants are stored in the database, and the 409A is
 // derived from them (the latest grant's strike).
-const EXPLORER_KEY = "options-explorer-v1";
+const EXPLORER_KEY = "equity-explorer-v1";
 
 type Mode = "all" | "vested";
 
@@ -57,7 +57,7 @@ function loadExplorer(): Explorer {
 }
 
 /** Keep values the backend accepts (it rejects negatives and zero-year vesting). */
-function sanitize(g: OptionGrant): OptionGrantPayload {
+function sanitize(g: EquityGrant): EquityGrantPayload {
   return {
     name: g.name.trim(),
     grant_date: g.grant_date || null,
@@ -68,7 +68,7 @@ function sanitize(g: OptionGrant): OptionGrantPayload {
   };
 }
 
-const samePayload = (a: OptionGrantPayload, b: OptionGrantPayload) =>
+const samePayload = (a: EquityGrantPayload, b: EquityGrantPayload) =>
   JSON.stringify(a) === JSON.stringify(b);
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -81,7 +81,7 @@ const INPUT =
 
 type Field = "name" | "grant_date" | "shares" | "strike" | "vesting_years" | "cliff_months";
 
-const toDraft = (g: OptionGrant): Record<Field, string> => ({
+const toDraft = (g: EquityGrant): Record<Field, string> => ({
   name: g.name,
   grant_date: g.grant_date ?? "",
   shares: String(g.shares),
@@ -100,20 +100,20 @@ function GrantRow({
   onCommit,
   onDelete,
 }: {
-  grant: OptionGrant;
+  grant: EquityGrant;
   index: number;
   price: number;
   today: Date;
   autoFocus: boolean;
-  onLiveChange: (g: OptionGrant) => void;
-  onCommit: (g: OptionGrant) => void;
-  onDelete: (g: OptionGrant) => void;
+  onLiveChange: (g: EquityGrant) => void;
+  onCommit: (g: EquityGrant) => void;
+  onDelete: (g: EquityGrant) => void;
 }) {
   // Inputs keep their own text so "4." or an empty field can be typed through;
   // the parsed grant is pushed up on every keystroke so the charts follow live.
   const [draft, setDraft] = useState(() => toDraft(grant));
 
-  const parse = (d: Record<Field, string>): OptionGrant => ({
+  const parse = (d: Record<Field, string>): EquityGrant => ({
     id: grant.id,
     name: d.name,
     grant_date: d.grant_date || null,
@@ -190,23 +190,23 @@ function GrantRow({
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-export default function OptionsPage() {
-  const [grants, setGrants] = useState<OptionGrant[]>([]);
+export default function EquityPage() {
+  const [grants, setGrants] = useState<EquityGrant[]>([]);
   const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [explorer, setExplorer] = useState<Explorer>(DEFAULT_EXPLORER);
   const [saveState, setSaveState] = useState<SaveState>("idle");
-  const [pendingDelete, setPendingDelete] = useState<OptionGrant | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<EquityGrant | null>(null);
   const [focusId, setFocusId] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
   // What the server last confirmed, so blurring an unchanged field is a no-op.
-  const saved = useRef<Map<number, OptionGrantPayload>>(new Map());
+  const saved = useRef<Map<number, EquityGrantPayload>>(new Map());
 
   const today = useMemo(() => new Date(), []);
 
   useEffect(() => {
     setExplorer(loadExplorer());
-    getOptionGrants()
+    getEquityGrants()
       .then((data) => {
         setGrants(data);
         saved.current = new Map(data.map((g) => [g.id, sanitize(g)]));
@@ -234,17 +234,17 @@ export default function OptionsPage() {
     );
   };
 
-  const replaceGrant = (g: OptionGrant) =>
+  const replaceGrant = (g: EquityGrant) =>
     setGrants((prev) => prev.map((x) => (x.id === g.id ? g : x)));
 
-  async function commitGrant(g: OptionGrant) {
+  async function commitGrant(g: EquityGrant) {
     replaceGrant(g);
     const payload = sanitize(g);
     const last = saved.current.get(g.id);
     if (last && samePayload(last, payload)) return;
     setSaveState("saving");
     try {
-      const stored = await updateOptionGrant(g.id, payload);
+      const stored = await updateEquityGrant(g.id, payload);
       saved.current.set(stored.id, sanitize(stored));
       setSaveState("saved");
     } catch {
@@ -256,7 +256,7 @@ export default function OptionsPage() {
     setAdding(true);
     setSaveState("saving");
     try {
-      const created = await createOptionGrant({
+      const created = await createEquityGrant({
         name: "New grant",
         grant_date: toISODate(today),
         shares: 1000,
@@ -282,7 +282,7 @@ export default function OptionsPage() {
     if (!g) return;
     setSaveState("saving");
     try {
-      await deleteOptionGrant(g.id);
+      await deleteEquityGrant(g.id);
       saved.current.delete(g.id);
       setGrants((prev) => prev.filter((x) => x.id !== g.id));
       setSaveState("saved");
@@ -316,7 +316,7 @@ export default function OptionsPage() {
     <div className="fx min-h-screen">
       <div className="mx-auto flex max-w-[1200px] flex-col gap-[22px] px-5 py-5 pb-8">
         <div>
-          <h1 className="text-[19px] font-semibold tracking-[-0.02em]">Options</h1>
+          <h1 className="text-[19px] font-semibold tracking-[-0.02em]">Equity</h1>
           <p className="mt-[5px] max-w-[68ch] text-[12.5px] text-fx-ink-3">
             What your equity appreciation rights pay out at a share price you pick — shares × (price −
             strike), in US dollars, before tax. For exploring only: not counted in net worth.

@@ -57,6 +57,7 @@ def main() -> None:
         get_business_mappings,
         get_cash_flow,
         get_description_to_category,
+        get_equity_grants,
         get_investment_accounts,
         get_investment_tracking,
         get_transactions,
@@ -100,6 +101,8 @@ def main() -> None:
 
         _insert(get_investment_accounts(), "investment_accounts")
         _insert(get_investment_tracking(), "investment_accounts_tracking")
+        # Let the identity column assign ids, so no sequence reset is needed.
+        _insert(get_equity_grants().drop(columns="id"), "equity_grants")
 
     # Reset sequences to avoid PK conflicts on future inserts
     with engine.begin() as conn:

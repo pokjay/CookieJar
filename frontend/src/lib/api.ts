@@ -31,8 +31,8 @@ import type {
   TxnHeatmapPoint,
   InvestmentAccount,
   CreateAccountPayload,
-  OptionGrant,
-  OptionGrantPayload,
+  EquityGrant,
+  EquityGrantPayload,
   UncategorizedDescription,
   CategoryMappingPayload,
   AppSettings,
@@ -524,20 +524,20 @@ export function triggerSync(payload: ScraperSyncPayload): Promise<{ run_id: stri
   return postJson("/api/scraper/sync", payload);
 }
 
-// --- Stock options ---
+// --- Equity grants ---
 
-export function getOptionGrants(): Promise<OptionGrant[]> {
-  return fetchJson("/api/options/grants");
+export function getEquityGrants(): Promise<EquityGrant[]> {
+  return fetchJson("/api/equity/grants");
 }
 
-export function createOptionGrant(payload: OptionGrantPayload): Promise<OptionGrant> {
-  return postJson("/api/options/grants", payload);
+export function createEquityGrant(payload: EquityGrantPayload): Promise<EquityGrant> {
+  return postJson("/api/equity/grants", payload);
 }
 
-export function updateOptionGrant(id: number, payload: OptionGrantPayload): Promise<OptionGrant> {
-  return requestJson("PUT", `/api/options/grants/${id}`, payload);
+export function updateEquityGrant(id: number, payload: EquityGrantPayload): Promise<EquityGrant> {
+  return requestJson("PUT", `/api/equity/grants/${id}`, payload);
 }
 
-export function deleteOptionGrant(id: number): Promise<{ ok: boolean }> {
-  return requestJson("DELETE", `/api/options/grants/${id}`);
+export function deleteEquityGrant(id: number): Promise<{ ok: boolean }> {
+  return requestJson("DELETE", `/api/equity/grants/${id}`);
 }

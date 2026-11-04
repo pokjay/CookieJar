@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { OptionGrant } from "@/lib/types";
+import type { EquityGrant } from "@/lib/types";
 import { grantColor, grantKey, usd, usdShort, type TimelineRow } from "./model";
 
 const TICK = { fill: "var(--fx-ink-3)", fontSize: 11, fontFamily: "var(--font-plex-mono)" };
@@ -53,7 +53,7 @@ function StackTooltip({
   );
 }
 
-function bands(grants: OptionGrant[]) {
+function bands(grants: EquityGrant[]) {
   return grants.map((g, i) => (
     <Area
       key={g.id}
@@ -79,7 +79,7 @@ export function PriceValueChart({
   maxPrice,
   markerValue,
 }: {
-  grants: OptionGrant[];
+  grants: EquityGrant[];
   rows: Record<string, number>[];
   price: number;
   fmv: number;
@@ -146,7 +146,7 @@ export function VestingTimelineChart({
   rows,
   todayLabel,
 }: {
-  grants: OptionGrant[];
+  grants: EquityGrant[];
   rows: TimelineRow[];
   todayLabel: string | null;
 }) {

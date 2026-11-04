@@ -374,11 +374,11 @@ def _generate_business_mappings() -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Stock option grants (Options explorer page)
+# Equity grants (Equity page)
 # ---------------------------------------------------------------------------
 
 
-def _generate_option_grants() -> pd.DataFrame:
+def _generate_equity_grants() -> pd.DataFrame:
     # Example grants: a hire grant plus refreshes. Strikes are in USD.
     rows = [
         (1, "Hire grant", date(2022, 3, 15), 8000, 4.20, 4, 12),
@@ -439,7 +439,7 @@ def get_business_mappings() -> pd.DataFrame:
     return _cache["business_mappings"].copy()
 
 
-def get_option_grants() -> pd.DataFrame:
-    if "option_grants" not in _cache:
-        _cache["option_grants"] = _generate_option_grants()
-    return _cache["option_grants"].copy()
+def get_equity_grants() -> pd.DataFrame:
+    if "equity_grants" not in _cache:
+        _cache["equity_grants"] = _generate_equity_grants()
+    return _cache["equity_grants"].copy()
