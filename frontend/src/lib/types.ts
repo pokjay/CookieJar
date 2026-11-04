@@ -269,6 +269,20 @@ export interface InvestmentAccount {
   last_updated: string | null;
 }
 
+/** A company stock option grant (Options page). Strike is in USD. */
+export interface OptionGrant {
+  id: number;
+  name: string;
+  /** Grant / vesting-start date, "YYYY-MM-DD". */
+  grant_date: string | null;
+  shares: number;
+  strike: number;
+  vesting_years: number;
+  cliff_months: number;
+}
+
+export type OptionGrantPayload = Omit<OptionGrant, "id">;
+
 export interface UncategorizedDescription {
   processed_description: string;
   count: number;

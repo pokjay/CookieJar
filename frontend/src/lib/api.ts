@@ -31,6 +31,8 @@ import type {
   TxnHeatmapPoint,
   InvestmentAccount,
   CreateAccountPayload,
+  OptionGrant,
+  OptionGrantPayload,
   UncategorizedDescription,
   CategoryMappingPayload,
   AppSettings,
@@ -520,4 +522,22 @@ export function deleteScraperAccount(
 
 export function triggerSync(payload: ScraperSyncPayload): Promise<{ run_id: string }> {
   return postJson("/api/scraper/sync", payload);
+}
+
+// --- Stock options ---
+
+export function getOptionGrants(): Promise<OptionGrant[]> {
+  return fetchJson("/api/options/grants");
+}
+
+export function createOptionGrant(payload: OptionGrantPayload): Promise<OptionGrant> {
+  return postJson("/api/options/grants", payload);
+}
+
+export function updateOptionGrant(id: number, payload: OptionGrantPayload): Promise<OptionGrant> {
+  return requestJson("PUT", `/api/options/grants/${id}`, payload);
+}
+
+export function deleteOptionGrant(id: number): Promise<{ ok: boolean }> {
+  return requestJson("DELETE", `/api/options/grants/${id}`);
 }

@@ -15,6 +15,7 @@ from backend.routers.cash_flow import router as cash_flow_router
 from backend.routers.categories import router as categories_router
 from backend.routers.investments import router as investments_router
 from backend.routers.manual_transactions import router as manual_transactions_router
+from backend.routers.options import router as options_router
 from backend.routers.overview import router as overview_router
 from backend.routers.scraper import router as scraper_router
 from backend.routers.settings import router as settings_router
@@ -72,6 +73,7 @@ app.include_router(manual_transactions_router, prefix="/api")
 app.include_router(overview_router, prefix="/api")
 app.include_router(cash_flow_router, prefix="/api")
 app.include_router(investments_router, prefix="/api")
+app.include_router(options_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(transactions_router, prefix="/api")
 app.include_router(travel_router, prefix="/api")
