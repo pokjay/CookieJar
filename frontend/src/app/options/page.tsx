@@ -498,7 +498,7 @@ export default function OptionsPage() {
                 <thead>
                   <tr className="border-b border-fx-line text-left text-[10.5px] font-medium text-fx-ink-3">
                     <th className="w-[22px] px-1.5 py-1.5" />
-                    <th className="px-1.5 py-1.5 font-medium">Name</th>
+                    <th className="min-w-[160px] px-1.5 py-1.5 font-medium">Name</th>
                     <th className="w-[150px] px-1.5 py-1.5 font-medium">Grant / vest start</th>
                     <th className="w-[100px] px-1.5 py-1.5 font-medium">Shares</th>
                     <th className="w-[90px] px-1.5 py-1.5 font-medium">Strike $</th>

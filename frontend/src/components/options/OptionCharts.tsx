@@ -28,7 +28,7 @@ function StackTooltip({
   title,
 }: {
   active?: boolean;
-  payload?: TooltipEntry[];
+  payload?: readonly TooltipEntry[];
   title: string;
 }) {
   if (!active || !payload?.length) return null;
@@ -111,7 +111,7 @@ export function PriceValueChart({
           content={({ active, payload, label }) => (
             <StackTooltip
               active={active}
-              payload={payload as TooltipEntry[]}
+              payload={payload as readonly TooltipEntry[]}
               title={`At $${Number(label).toFixed(2)} / share`}
             />
           )}
@@ -172,7 +172,7 @@ export function VestingTimelineChart({
         <Tooltip
           cursor={{ stroke: "var(--fx-ink-3)", strokeWidth: 1 }}
           content={({ active, payload, label }) => (
-            <StackTooltip active={active} payload={payload as TooltipEntry[]} title={String(label)} />
+            <StackTooltip active={active} payload={payload as readonly TooltipEntry[]} title={String(label)} />
           )}
         />
         {bands(grants)}
