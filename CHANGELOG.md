@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here.
 
+## [0.15.0](https://github.com/pokjay/CookieJar/compare/v0.14.0...v0.15.0) (2026-11-04)
+
+
+### Features
+
+* **equity:** rebuild Equity charts around exit timing and the stay-or-leave choice ([#181](https://github.com/pokjay/CookieJar/issues/181)) ([ab0b025](https://github.com/pokjay/CookieJar/commit/ab0b025db7d537499bb0657d2d978dc1d553a33e))
+
+
+### Bug Fixes
+
+* **frontend:** restore ESLint with a flat config and run it in CI ([#180](https://github.com/pokjay/CookieJar/issues/180)) ([3a08755](https://github.com/pokjay/CookieJar/commit/3a08755da49391c9dec325acc3097f1a8231f872))
+
 ## [0.14.0](https://github.com/pokjay/CookieJar/compare/v0.13.0...v0.14.0) (2026-11-04)
 
 
