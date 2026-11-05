@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [0.16.0](https://github.com/pokjay/CookieJar/compare/v0.15.1...v0.16.0) (2026-11-04)
+
+
+### Features
+
+* **overview:** hoverable account charts with month ticks and range start balance ([#185](https://github.com/pokjay/CookieJar/issues/185)) ([8acacee](https://github.com/pokjay/CookieJar/commit/8acaceebf1250ba61c13c5d2d3af91387b1ddde0))
+
 ## [0.15.1](https://github.com/pokjay/CookieJar/compare/v0.15.0...v0.15.1) (2026-11-04)
 
 
